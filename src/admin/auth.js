@@ -48,6 +48,7 @@ function createAuth({ cfg, db }) {
     try {
       const a = { user: null, csrf: '', flash: null };
       req.admin = a;
+      req.adminCsrf = ''; // скрытое поле с токеном для форм: должно быть готово до сборки тела страницы, а не после
       const flash = sec.unsign(cfg.secret, req.cookies[flashName]);
       if (flash) {
         a.flash = { kind: flash.k === 'err' ? 'err' : 'ok', text: String(flash.t || '') };
@@ -62,6 +63,7 @@ function createAuth({ cfg, db }) {
           a.user = { id: u.id, username: u.username, name: u.display_name || u.username, role: u.role };
           a.session = s;
           a.csrf = sec.csrfToken(cfg.secret, s);
+          req.adminCsrf = csrfField(req);
           if (s.exp - Date.now() < maxAgeMs / 2) startSession(res, u, s.sid);
         }
       }

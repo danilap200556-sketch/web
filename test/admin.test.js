@@ -201,3 +201,46 @@ test('доставка: правка цены применяется на офо
   await c.post('/admin/delivery/method/cdek', { _csrf: csrf, title: 'СДЭК Экспресс', price: '777' });
   assert.doesNotMatch((await g.get('/checkout')).text, /СДЭК Экспресс/, 'без галочки способ выключен');
 });
+
+// Регрессия: токен формы подставлялся в страницу уже после её сборки, формы уходили без _csrf, и любое сохранение давало
+// «Страница устарела». Тесты выше подставляли токен вручную, поэтому ошибку не видели. Здесь формы отправляются как в браузере.
+function formsOf(html) {
+  return [...html.matchAll(/<form\b([^>]*)>([\s\S]*?)<\/form>/g)].map((m) => ({ attrs: m[1], inner: m[2] }));
+}
+const hiddenCsrf = (inner) => /<input type="hidden" name="_csrf" value="([^"]+)"/.exec(inner)?.[1] || '';
+
+test('все POST-формы админки содержат токен (на каждой странице)', async () => {
+  const { c } = await adminLogin(shop.base, 'owner1', 'owner-pass-123');
+  const cust = (await shop.db.query('SELECT id FROM webshop.customers ORDER BY id LIMIT 1')).rows[0];
+  const pages = ['/admin', '/admin/orders', `/admin/orders/${orderId}`, '/admin/customers', '/admin/traffic', '/admin/showcase',
+    '/admin/delivery', '/admin/users', '/admin/settings', '/admin/account', ...(cust ? [`/admin/customers/${cust.id}`] : [])];
+  let posts = 0;
+  for (const path of pages) {
+    const r = await c.get(path);
+    assert.equal(r.status, 200, path);
+    for (const f of formsOf(r.text)) {
+      if (!/method="post"/i.test(f.attrs)) continue;
+      posts++;
+      assert.ok(hiddenCsrf(f.inner), `${path}: у формы ${f.attrs.trim().slice(0, 70)} нет скрытого поля _csrf`);
+    }
+  }
+  assert.ok(posts > 15, `проверено форм: ${posts}`);
+});
+
+test('сезон и настройки сохраняются формами со страницы, без ручного токена', async () => {
+  const { c } = await adminLogin(shop.base, 'owner1', 'owner-pass-123');
+  const page = (await c.get('/admin/showcase')).text;
+  const season = formsOf(page).find((f) => /action="\/admin\/showcase\/season"/.test(f.attrs));
+  assert.ok(season, 'форма сезона есть');
+  const r = await c.post('/admin/showcase/season', { _csrf: hiddenCsrf(season.inner), mode: 'summer', title_summer: 'Летняя подборка из формы' });
+  assert.equal(r.status, 302, 'сохранение принято, а не «Страница устарела»');
+  assert.equal(r.location, '/admin/showcase');
+  assert.match((await client(shop.base).get('/')).text, /data-season="summer"/);
+  const settingsPage = (await c.get('/admin/settings')).text;
+  const form = formsOf(settingsPage).find((f) => /action="\/admin\/settings"/.test(f.attrs));
+  const rs = await c.post('/admin/settings', { _csrf: hiddenCsrf(form.inner), shopName: 'FORMSHOP', phone: '+7 900 000-00-00' });
+  assert.equal(rs.status, 302);
+  assert.match((await client(shop.base).get('/')).text, /FORMSHOP/);
+  await c.post('/admin/showcase/season', { _csrf: hiddenCsrf(season.inner), mode: 'auto', requirePhoto: 'on' }); // вернуть как было
+  await c.post('/admin/settings', { _csrf: hiddenCsrf(form.inner), shopName: 'SOLEHOUSE' });
+});

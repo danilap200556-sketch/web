@@ -113,7 +113,7 @@ npm run seed-dev -- выгрузка.xlsx    # таблицы склада + т�
 node scripts/seed-dev-prices.js   # придуманные цены и скидки сайта (таблица site_prices; в боевой базе их задаёт приложение)
 node scripts/seed-demo-orders.js --reset   # придуманные заказы, клиенты и посещения за 60 дней (только локальная база)
 npm start                      # http://localhost:3000, админка: /admin
-npm test                       # 82 теста на реальной PostgreSQL (нужен пользователь с правом CREATE DATABASE)
+npm test                       # 84 теста на реальной PostgreSQL (нужен пользователь с правом CREATE DATABASE)
 ```
 
 Тесты создают отдельные базы `webshop_test_*` и берут подключение из `TEST_DB_HOST/PORT/USER/PASSWORD`

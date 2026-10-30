@@ -554,3 +554,16 @@ select:focus, .field input:focus, .field textarea:focus { border-color: var(--in
   .price-old { font-size: 12.5px; margin-left: 6px; }
   .price-old--lg { font-size: 17px; }
 }
+
+/* Расчёт доставки по API: подсказка города и выбор пункта выдачи */
+.field--suggest { position: relative; }
+.suggest { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; right: 0; margin: 0; padding: 4px; list-style: none; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 14px 32px -14px rgba(0, 0, 0, .3); max-height: 280px; overflow: auto; }
+.suggest[hidden] { display: none; }
+.suggest__i { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; padding: 9px 12px; border: 0; background: transparent; border-radius: 8px; text-align: left; font: inherit; font-weight: 600; color: var(--ink); cursor: pointer; }
+.suggest__i:hover, .suggest__i:focus-visible { background: var(--accent-soft); outline: 0; }
+.suggest__i small { color: var(--muted); font-size: 13px; font-weight: 500; }
+.pvz { display: grid; gap: 8px; }
+.pvz[hidden] { display: none; }
+.pvz__list { max-height: 300px; overflow: auto; border: 1px solid var(--line); border-radius: 12px; padding: 0 14px; background: var(--surface); }
+.pvz__list .hint { padding: 10px 0; margin: 0; }
+.hint--info { color: var(--ink-2); }

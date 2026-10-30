@@ -227,23 +227,57 @@
     const onlineRadio = $('input[name="pay"][value="online"]', co);
     const norm = (s) => String(s || '').toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-я0-9]+/g, ' ').trim();
 
+    // Расчёт по API перевозчика (СДЭК): город из списка, пункт выдачи из списка, цена и срок от сервера. При сбое API - прежняя форма.
+    const cityCode = $('[data-city-code]', co);
+    const cityList = $('[data-city-list]', co);
+    const pvz = $('[data-pvz]', co);
+    const pvzQ = $('[data-pvz-q]', co);
+    const pvzList = $('[data-pvz-list]', co);
+    const pvzCode = $('[data-pvz-code]', co);
+    const pvzChosen = $('[data-pvz-chosen]', co);
+    const etaHint = $('[data-eta-hint]', co);
+    const api = { failed: false, quote: null, key: '' };
+
     function current() {
       const r = $('input[name="delivery"]:checked', co);
       const m = r && r.closest('[data-method]');
-      return m ? { kind: m.dataset.kind, price: +m.dataset.price, doorExtra: +m.dataset.doorExtra, freeFrom: m.dataset.freeFrom === '' ? null : +m.dataset.freeFrom, cities: m.dataset.cities } : null;
+      return m ? { code: m.dataset.code, api: m.dataset.api === '1', kind: m.dataset.kind, price: +m.dataset.price, doorExtra: +m.dataset.doorExtra, freeFrom: m.dataset.freeFrom === '' ? null : +m.dataset.freeFrom, cities: m.dataset.cities } : null;
     }
+    const modeNow = () => (($('input[name="mode"]:checked', co) || {}).value === 'door' ? 'door' : 'point');
+    const apiOn = (m) => Boolean(m && m.api && !api.failed);
+    const quoteKey = (m) => m.code + '|' + cityCode.value + '|' + modeNow();
+    async function getJson(url) {
+      try {
+        const r = await fetch(url, { headers: { accept: 'application/json' } });
+        let d = null;
+        try { d = await r.json(); } catch (e) { /* не JSON */ }
+        return { ok: r.ok, status: r.status, data: d || {} };
+      } catch (e) { return { ok: false, status: 0, data: {} }; }
+    }
+    function apiFailed() {
+      api.failed = true; api.quote = null;
+      cityCode.value = ''; pvzCode.value = ''; cityList.hidden = true;
+      etaHint.textContent = 'Не удалось рассчитать доставку онлайн: показана ориентировочная цена, менеджер уточнит точную. Укажите город и пункт выдачи текстом.';
+      etaHint.hidden = false;
+      update();
+    }
+
     function update() {
       const m = current();
       if (!m) return;
-      const mode = ($('input[name="mode"]:checked', co) || {}).value;
+      const mode = modeNow();
       const door = m.kind === 'courier' || (m.kind === 'tc' && mode === 'door');
+      const useApi = apiOn(m);
       paneP.hidden = m.kind !== 'pickup';
       paneA.hidden = m.kind === 'pickup';
       modeBox.hidden = m.kind !== 'tc';
       fAddr.hidden = !door;
-      fTc.hidden = door;
+      fTc.hidden = door || useApi;
+      pvz.hidden = !(useApi && !door && cityCode.value);
+      if (!m.api) etaHint.hidden = true;
       const free = m.freeFrom !== null && subtotal >= m.freeFrom;
-      const price = free ? 0 : m.price + (door ? m.doorExtra : 0);
+      let price = free ? 0 : m.price + (door ? m.doorExtra : 0);
+      if (useApi && api.quote && api.key === quoteKey(m)) price = api.quote.price;
       $('[data-sum-delivery]', co).textContent = price ? rub(price) : 'Бесплатно';
       $('[data-sum-total]', co).textContent = rub(subtotal + price);
       // Город и ограничения курьера
@@ -257,9 +291,93 @@
       payHint.hidden = !tc;
       if (tc && codRadio.checked) onlineRadio.checked = true;
     }
-    co.addEventListener('change', update);
-    cityIn.addEventListener('input', update);
+
+    async function refreshQuote() {
+      const m = current();
+      if (!apiOn(m) || !cityCode.value) { api.quote = null; if (m && m.api && !api.failed) etaHint.hidden = true; update(); return; }
+      const key = quoteKey(m);
+      const r = await getJson('/api/delivery/quote?' + new URLSearchParams({ method: m.code, city: cityCode.value, mode: modeNow() }));
+      const now = current();
+      if (!now || quoteKey(now) !== key) return; // пока считали, выбор изменился
+      if (r.ok) {
+        api.quote = r.data; api.key = key;
+        const a = r.data.etaMin, b = r.data.etaMax;
+        const eta = a && b ? 'Срок доставки: ' + (a === b ? a : a + '-' + b) + ' дн.' : '';
+        etaHint.textContent = (eta + (r.data.free ? ' Доставка бесплатная.' : '')).trim();
+        etaHint.hidden = !etaHint.textContent;
+        update();
+      } else if (r.status === 422) {
+        api.quote = null;
+        etaHint.textContent = (r.data.error || 'Сюда доставка недоступна') + '. Выберите другой город или способ.';
+        etaHint.hidden = false;
+        update();
+      } else apiFailed();
+    }
+
+    const loadCities = debounce(async () => {
+      const m = current();
+      const q = cityIn.value.trim();
+      if (!apiOn(m) || q.length < 2) { cityList.hidden = true; return; }
+      const r = await getJson('/api/delivery/cities?' + new URLSearchParams({ method: m.code, q }));
+      if (cityIn.value.trim() !== q) return;
+      if (!r.ok) { cityList.hidden = true; if (r.status !== 422) apiFailed(); return; }
+      cityList.replaceChildren();
+      (r.data.cities || []).forEach((c) => {
+        const li = el('li');
+        const b = el('button', 'suggest__i');
+        b.type = 'button';
+        b.appendChild(el('b', null, c.name));
+        if (c.region) b.appendChild(el('small', null, c.region));
+        b.addEventListener('mousedown', (e) => e.preventDefault());
+        b.addEventListener('click', () => {
+          cityIn.value = c.name; cityCode.value = String(c.code); cityList.hidden = true;
+          pvzCode.value = ''; pvzChosen.textContent = ''; pvzQ.value = '';
+          refreshQuote(); fetchPoints(''); update();
+        });
+        li.appendChild(b);
+        cityList.appendChild(li);
+      });
+      cityList.hidden = !cityList.children.length;
+    }, 250);
+
+    async function fetchPoints(q) {
+      const m = current();
+      if (!apiOn(m) || !cityCode.value || modeNow() === 'door') return;
+      const r = await getJson('/api/delivery/points?' + new URLSearchParams({ method: m.code, city: cityCode.value, q }));
+      if (!r.ok) { if (r.status === 422) pvzList.replaceChildren(el('p', 'hint', r.data.error || 'Пункты недоступны')); else apiFailed(); return; }
+      pvzList.replaceChildren();
+      const pts = r.data.points || [];
+      if (!pts.length) pvzList.appendChild(el('p', 'hint', 'Ничего не найдено. Измените запрос.'));
+      pts.forEach((p) => {
+        const lab = el('label', 'point');
+        const inp = el('input');
+        inp.type = 'radio'; inp.name = 'pvz_pick'; inp.value = p.code; inp.checked = pvzCode.value === p.code;
+        inp.addEventListener('change', () => { pvzCode.value = p.code; pvzChosen.textContent = 'Выбрано: ' + p.address; });
+        const sp = el('span');
+        sp.appendChild(el('b', null, p.title || p.address));
+        sp.appendChild(el('small', null, p.title ? p.address + (p.hours ? ' · ' + p.hours : '') : (p.hours || '')));
+        lab.append(inp, sp);
+        pvzList.appendChild(lab);
+        if (inp.checked) pvzChosen.textContent = 'Выбрано: ' + p.address;
+      });
+      if (!q && r.data.total > pts.length) pvzList.appendChild(el('p', 'hint', 'Показаны первые пункты, остальные ищите по улице или метро.'));
+    }
+    const searchPoints = debounce(() => fetchPoints(pvzQ.value.trim()), 250);
+    pvzQ.addEventListener('input', searchPoints);
+    pvzQ.addEventListener('keydown', (e) => { if (e.key === 'Enter') e.preventDefault(); });
+
+    co.addEventListener('change', (e) => {
+      update();
+      if (e.target.name === 'mode' || e.target.name === 'delivery') { refreshQuote(); fetchPoints(pvzQ.value.trim()); }
+    });
+    cityIn.addEventListener('input', () => {
+      if (cityCode.value) { cityCode.value = ''; pvzCode.value = ''; pvzChosen.textContent = ''; api.quote = null; etaHint.hidden = true; }
+      update();
+      loadCities();
+    });
+    document.addEventListener('click', (e) => { if (!cityList.contains(e.target) && e.target !== cityIn) cityList.hidden = true; });
     update();
+    if (cityCode.value && current() && current().api) { refreshQuote(); fetchPoints(pvzCode.value); } // страница вернулась после ошибки в форме
 
     const phone = $('[data-phone]', co);
     phone.addEventListener('input', () => {
@@ -275,7 +393,14 @@
       if (d.length > 9) s += '-' + d.slice(9, 11);
       phone.value = s;
     });
-    co.addEventListener('submit', () => { const b = $('[data-submit]', co); b.disabled = true; b.textContent = 'Оформляем…'; });
+    co.addEventListener('submit', (e) => {
+      const m = current();
+      if (apiOn(m)) {
+        if (!cityCode.value) { e.preventDefault(); cityHint.textContent = 'Выберите город из выпадающего списка'; cityHint.hidden = false; cityIn.focus(); return; }
+        if (modeNow() === 'point' && !pvzCode.value) { e.preventDefault(); pvzChosen.textContent = 'Выберите пункт выдачи из списка'; pvz.scrollIntoView({ block: 'center' }); return; }
+      }
+      const b = $('[data-submit]', co); b.disabled = true; b.textContent = 'Оформляем…';
+    });
   }
 
   /* ---------- Уведомление о cookie ---------- */

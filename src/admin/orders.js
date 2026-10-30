@@ -151,6 +151,8 @@ module.exports = function mount({ db, auth, render, fmt, chip, router, catalog, 
               <dt>Способ</dt><dd>${o.delivery_title}</dd>
               ${o.delivery_city ? html`<dt>Город</dt><dd>${o.delivery_city}</dd>` : ''}
               <dt>${o.delivery_kind === 'pickup' ? 'Пункт самовывоза' : o.delivery_door ? 'Адрес' : 'Пункт выдачи'}</dt><dd>${o.delivery_address || o.delivery_point}</dd>
+              ${o.delivery_meta ? html`<dt>Расчёт по API</dt><dd>${o.delivery_meta.tariff || 'тариф ' + o.delivery_meta.tariffCode}: ${rub(o.delivery_meta.apiPrice)}${o.delivery_meta.etaMax ? `, ${o.delivery_meta.etaMin === o.delivery_meta.etaMax ? o.delivery_meta.etaMin : o.delivery_meta.etaMin + '-' + o.delivery_meta.etaMax} дн.` : ''}
+                <small class="muted">город №${o.delivery_meta.cityCode}${o.delivery_meta.pointCode ? ', пункт ' + o.delivery_meta.pointCode : ''}, тариф ${o.delivery_meta.tariffCode}</small></dd>` : ''}
               <dt>Стоимость</dt><dd>${Number(o.delivery_cost) ? rub(o.delivery_cost) : 'бесплатно'}</dd>
             </dl>
             <form method="post" action="/admin/orders/${o.id}/track" class="inline inline--grow">${req.adminCsrf}

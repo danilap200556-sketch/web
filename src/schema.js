@@ -153,6 +153,8 @@ const SCHEMA = [
      error TEXT NOT NULL DEFAULT ''
    )`,
   `CREATE INDEX IF NOT EXISTS outbox_due_idx ON webshop.outbox (next_at) WHERE sent_at IS NULL`,
+  // Данные расчёта доставки по API (перевозчик, код города и пункта выдачи, тариф, срок): пригодятся при оформлении отправки
+  `ALTER TABLE webshop.orders ADD COLUMN IF NOT EXISTS delivery_meta JSONB`,
 ];
 
 module.exports = { SCHEMA };

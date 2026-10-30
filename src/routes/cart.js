@@ -1,14 +1,16 @@
 'use strict';
 const { html, raw } = require('../html');
 const { icon } = require('../icons');
-const { rub, plural, formatPhone, dateFmt, clampInt } = require('../util');
+const { rub, plural, formatPhone, dateFmt, clampInt, str } = require('../util');
+const { norm } = require('../catalog');
+const { parcelOf, CarrierError } = require('../carriers');
 const sec = require('../security');
 const cartLib = require('../cart');
 const { quote, PAY_METHODS } = require('../delivery');
 const { OrderError, STATUSES, FLOW, validateCheckout, createOrder, getOrderByToken } = require('../orders');
 const { photoUrl } = require('../shopviews');
 
-module.exports = function mount(app, { cfg, db, catalog, carts, tracker, delivery, notifier }, shopCtx, send) {
+module.exports = function mount(app, { cfg, db, catalog, carts, tracker, delivery, notifier, carriers }, shopCtx, send) {
   const { cartName, cartCountName, cookieOpts } = app.locals.cookies;
   const fmt = dateFmt(cfg.tz);
   const orderLimiter = new sec.RateLimiter(8, 10 * 60_000);
@@ -131,7 +133,7 @@ module.exports = function mount(app, { cfg, db, catalog, carts, tracker, deliver
   });
 
   // ---------- Оформление ----------
-  const emptyForm = () => ({ name: '', phone: '', email: '', delivery: '', mode: 'point', city: '', address: '', tcpoint: '', point: '', pay: '', comment: '', consent: '' });
+  const emptyForm = () => ({ name: '', phone: '', email: '', delivery: '', mode: 'point', city: '', city_code: '', address: '', tcpoint: '', tcpoint_code: '', point: '', pay: '', comment: '', consent: '' });
 
   async function renderCheckout(req, res, { form = emptyForm(), error = '', status = 200 } = {}) {
     const ctx = req.ctx;
@@ -173,7 +175,7 @@ module.exports = function mount(app, { cfg, db, catalog, carts, tracker, deliver
             <div class="options" role="radiogroup">
               ${methods.map((m) => {
                 const q = quote(m, priced.subtotal, m.kind === 'courier');
-                return html`<label class="option" data-method data-kind="${m.kind}" data-price="${m.price}" data-door-extra="${m.door_extra}" data-free-from="${m.free_from ?? ''}" data-cities="${m.cities}">
+                return html`<label class="option" data-method data-kind="${m.kind}" data-code="${m.code}" ${m.kind === 'tc' && carriers.has(m.code) ? raw('data-api="1"') : ''} data-price="${m.price}" data-door-extra="${m.door_extra}" data-free-from="${m.free_from ?? ''}" data-cities="${m.cities}">
                   <input type="radio" name="delivery" value="${m.code}" ${form.delivery === m.code ? raw('checked') : ''}>
                   <span class="option__ic">${icon(kindIcon[m.kind])}</span>
                   <span class="option__t"><b>${m.title}</b><small>${m.description}${m.eta ? ' · ' + m.eta : ''}</small></span>
@@ -189,7 +191,9 @@ module.exports = function mount(app, { cfg, db, catalog, carts, tracker, deliver
             </div>
             <div class="deliv deliv--address" data-pane="address">
               <div class="fields">
-                <label class="field">Город<input name="city" value="${form.city}" autocomplete="address-level2" placeholder="Например, Москва" data-city></label>
+                <label class="field field--suggest">Город<input name="city" value="${form.city}" autocomplete="address-level2" placeholder="Например, Москва" data-city>
+                  <input type="hidden" name="city_code" value="${form.city_code}" data-city-code>
+                  <ul class="suggest" data-city-list hidden></ul></label>
                 <div class="field" data-tc-mode>
                   <span class="field__l">Куда доставить</span>
                   <div class="seg seg--sm"><label><input type="radio" name="mode" value="point" ${form.mode !== 'door' ? raw('checked') : ''}><span>В пункт выдачи</span></label>
@@ -197,7 +201,15 @@ module.exports = function mount(app, { cfg, db, catalog, carts, tracker, deliver
                 </div>
                 <label class="field field--wide" data-field-address>Адрес доставки<input name="address" value="${form.address}" autocomplete="street-address" placeholder="Улица, дом, квартира, подъезд, этаж"></label>
                 <label class="field field--wide" data-field-tcpoint>Пункт выдачи<input name="tcpoint" value="${form.tcpoint}" placeholder="Адрес пункта или его номер: подскажем, если не знаете"></label>
+                <div class="field field--wide pvz" data-pvz hidden>
+                  <span class="field__l">Пункт выдачи</span>
+                  <input type="search" class="pvz__q" data-pvz-q placeholder="Улица, метро или название пункта" autocomplete="off" maxlength="60">
+                  <div class="pvz__list" data-pvz-list></div>
+                  <input type="hidden" name="tcpoint_code" value="${form.tcpoint_code}" data-pvz-code>
+                  <p class="hint" data-pvz-chosen></p>
+                </div>
               </div>
+              <p class="hint hint--info" data-eta-hint hidden></p>
               <p class="hint" data-city-hint hidden></p>
             </div>
           </fieldset>
@@ -259,6 +271,103 @@ module.exports = function mount(app, { cfg, db, catalog, carts, tracker, deliver
     } catch (e) { next(e); }
   });
 
+  // ---------- Расчёт доставки по API перевозчика ----------
+  const apiLimiter = new sec.RateLimiter(300, 10 * 60_000); // защищает наш лимит запросов у перевозчика
+  const carrierFor = (req, res) => {
+    const m = req.ctx.deliveryData.methods.find((x) => x.code === req.query.method && x.active && x.kind === 'tc');
+    const carrier = m && carriers.get(m.code);
+    if (!carrier) { res.status(404).json({ error: 'Расчёт по API для этого способа не подключён' }); return null; }
+    const ip = req.ip || 'x';
+    if (apiLimiter.blocked(ip)) { res.status(429).json({ error: 'Слишком много запросов, попробуйте через минуту' }); return null; }
+    apiLimiter.fail(ip);
+    return { m, carrier };
+  };
+  const apiFail = (res, e) => {
+    if (e instanceof CarrierError) return res.status(e.transient ? 502 : 422).json({ error: e.message, transient: e.transient });
+    throw e;
+  };
+
+  app.get('/api/delivery/cities', shopCtx, async (req, res, next) => {
+    try {
+      const q = str(req.query.q, 40);
+      if (q.length < 2) return res.json({ cities: [] });
+      const c = carrierFor(req, res); if (!c) return;
+      try { res.json({ cities: await c.carrier.suggestCities(q) }); } catch (e) { apiFail(res, e); }
+    } catch (e) { next(e); }
+  });
+
+  app.get('/api/delivery/points', shopCtx, async (req, res, next) => {
+    try {
+      const code = String(req.query.city || '');
+      if (!/^\d{1,9}$/.test(code)) return res.status(400).json({ error: 'Не выбран город' });
+      const c = carrierFor(req, res); if (!c) return;
+      try {
+        const words = norm(str(req.query.q, 60)).split(' ').filter(Boolean);
+        const all = await c.carrier.points(code);
+        const list = all.filter((p) => { const t = norm(`${p.name} ${p.address} ${p.code}`); return words.every((w) => t.includes(w)); }).slice(0, 40);
+        res.json({ total: all.length, points: list.map((p) => ({ code: p.code, title: p.name, address: p.address, hours: p.hours })) });
+      } catch (e) { apiFail(res, e); }
+    } catch (e) { next(e); }
+  });
+
+  // Расчёт для корзины: цену считает сервер, клиенту отдаётся только результат
+  async function carrierQuote(m, carrier, { cityCode, door, lines, subtotal }) {
+    const t = await carrier.tariff({ toCode: cityCode, door, packages: parcelOf(lines, carriers.parcel) });
+    const free = m.free_from !== null && subtotal >= m.free_from;
+    return { ...t, free, price: free ? 0 : t.price };
+  }
+
+  app.get('/api/delivery/quote', shopCtx, async (req, res, next) => {
+    try {
+      const code = String(req.query.city || '');
+      if (!/^\d{1,9}$/.test(code)) return res.status(400).json({ error: 'Не выбран город' });
+      const c = carrierFor(req, res); if (!c) return;
+      const { priced } = await loadCart(req);
+      const lines = priced.lines.filter((l) => !l.gone && !l.out && l.qty > 0);
+      if (!lines.length) return res.status(409).json({ error: 'Корзина пуста' });
+      try {
+        const q = await carrierQuote(c.m, c.carrier, { cityCode: code, door: req.query.mode === 'door', lines, subtotal: priced.subtotal });
+        res.json({ price: q.price, total: priced.subtotal + q.price, free: q.free, etaMin: q.etaMin, etaMax: q.etaMax, tariff: q.tariffName });
+      } catch (e) { apiFail(res, e); }
+    } catch (e) { next(e); }
+  });
+
+  // При оформлении цену и пункт выдачи проверяет сервер заново. null - расчёт по API недоступен, действуют цены из админки.
+  async function carrierExt(m, form, lines, subtotal) {
+    if (!m || m.kind !== 'tc' || !carriers.has(m.code) || !/^\d{1,9}$/.test(form.city_code)) return null;
+    const carrier = carriers.get(m.code);
+    const door = form.mode === 'door';
+    const cityName = str(form.city, 80);
+    if (!cityName) throw new OrderError('Укажите город доставки');
+    let t;
+    try {
+      t = await carrierQuote(m, carrier, { cityCode: form.city_code, door, lines, subtotal });
+    } catch (e) {
+      if (!(e instanceof CarrierError)) throw e;
+      if (!e.transient) throw new OrderError(`${e.message}. Выберите другой способ доставки или город`);
+      console.warn(`[delivery] ${m.code}: расчёт недоступен, берём цену из админки: ${e.message}`);
+      return null;
+    }
+    let pointText = '';
+    let pointCode = '';
+    if (!door) {
+      pointCode = str(form.tcpoint_code, 40);
+      let pts;
+      try { pts = await carrier.points(form.city_code); } catch (e) {
+        if (!(e instanceof CarrierError)) throw e;
+        console.warn(`[delivery] ${m.code}: пункты выдачи недоступны: ${e.message}`);
+        return null;
+      }
+      const p = pts.find((x) => x.code === pointCode);
+      if (!p) throw new OrderError('Выберите пункт выдачи из списка');
+      pointText = `${p.name ? p.name + ', ' : ''}${p.address} (${carrier.title}: ${p.code})`;
+    }
+    return {
+      cityName, door, price: t.price, free: t.free, pointText,
+      meta: { carrier: m.code, cityCode: Number(form.city_code), pointCode, tariffCode: t.tariffCode, tariff: t.tariffName, etaMin: t.etaMin, etaMax: t.etaMax, apiPrice: t.price },
+    };
+  }
+
   app.post('/checkout', shopCtx, async (req, res, next) => {
     try {
       const form = { ...emptyForm(), ...Object.fromEntries(Object.entries(req.body).filter(([k]) => k in emptyForm())) };
@@ -273,7 +382,8 @@ module.exports = function mount(app, { cfg, db, catalog, carts, tracker, deliver
       const subtotal = lines.reduce((a, l) => a + l.sum, 0);
       let data;
       try {
-        data = validateCheckout(form, d.methods, d.points, subtotal);
+        const ext = await carrierExt(d.methods.find((x) => x.code === form.delivery && x.active), form, lines, subtotal);
+        data = validateCheckout(form, d.methods, d.points, subtotal, ext);
       } catch (e) {
         if (!(e instanceof OrderError)) throw e;
         return renderCheckout(req, res, { form, error: e.message, status: 422 });

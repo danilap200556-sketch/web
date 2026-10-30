@@ -38,6 +38,24 @@ function load(env = process.env) {
     // Как долго держать кэш каталога в памяти (сек): товары и остатки правятся в приложении, сайт подхватывает сам.
     catalogTtl: intEnv(env.CATALOG_TTL, 30),
     // Уведомления о новых заказах в Telegram: токен бота (@BotFather) и один или несколько чатов через запятую (число или @канал).
+    // Расчёт доставки по API. СДЭК: ключи интеграции из личного кабинета (Интеграция -> Ключи API), откуда отправляем и как.
+    // Размеры и вес одной коробки с парой - для расчёта тарифа (в посылке они складываются по числу пар).
+    carriers: {
+      cdek: {
+        account: (env.CDEK_ACCOUNT || '').trim(),
+        secret: (env.CDEK_SECURE || '').trim(),
+        baseUrl: (env.CDEK_API_URL || 'https://api.cdek.ru').replace(/\/+$/, ''),
+        fromCode: intEnv(env.CDEK_FROM_CODE, 0),
+        fromCity: (env.CDEK_FROM_CITY || '').trim(),
+        fromMode: env.CDEK_FROM_MODE === 'door' ? 'door' : 'office',
+      },
+      parcel: {
+        weightG: intEnv(env.PARCEL_WEIGHT_G, 1500),
+        length: intEnv(env.PARCEL_LENGTH_CM, 34),
+        width: intEnv(env.PARCEL_WIDTH_CM, 22),
+        height: intEnv(env.PARCEL_HEIGHT_CM, 14),
+      },
+    },
     notify: {
       telegramToken: (env.TELEGRAM_BOT_TOKEN || '').trim(),
       telegramChatIds: (env.TELEGRAM_CHAT_ID || '').split(/[\s,;]+/).filter(Boolean),

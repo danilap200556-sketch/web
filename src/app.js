@@ -10,6 +10,7 @@ const { createCarts } = require('./cart');
 const { createTracker } = require('./track');
 const { createWriteoff } = require('./writeoff');
 const { createNotifier } = require('./notify');
+const { createCarriers } = require('./carriers');
 const { currentSeason, SEASONS } = require('./seasons');
 const { DEPARTMENTS } = require('./model');
 const { createMedia } = require('./media');
@@ -18,7 +19,7 @@ const { icon } = require('./icons');
 
 const ASSET_V = Date.now().toString(36);
 
-function createApp(cfg, db) {
+function createApp(cfg, db, opts = {}) {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', cfg.trustProxy);
@@ -31,7 +32,8 @@ function createApp(cfg, db) {
   const media = createMedia(db);
   const writeoff = createWriteoff(db);
   const notifier = createNotifier({ db, cfg });
-  const services = { cfg, db, settings, catalog, delivery, carts, tracker, media, writeoff, notifier };
+  const carriers = createCarriers(cfg, { fetchImpl: opts.fetchImpl });
+  const services = { cfg, db, settings, catalog, delivery, carts, tracker, media, writeoff, notifier, carriers };
   app.locals.services = services;
 
   // --- Заголовки безопасности. Скрипты и стили - только свои файлы (без inline).

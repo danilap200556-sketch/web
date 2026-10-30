@@ -23,7 +23,8 @@ const FLOW = ['new', 'confirmed', 'paid', 'packed', 'shipped', 'delivered'];
 const newToken = () => crypto.randomBytes(18).toString('base64url');
 
 // Проверка формы оформления + расчёт. Возвращает данные заказа или бросает OrderError с текстом для покупателя.
-function validateCheckout(body, methods, points, subtotal) {
+// ext - итог расчёта по API перевозчика (см. routes/cart.js): город, режим, цена, пункт выдачи; без него действуют фиксированные цены из админки.
+function validateCheckout(body, methods, points, subtotal, ext = null) {
   const name = str(body.name, 80);
   if (name.length < 2) throw new OrderError('Укажите, как к вам обращаться');
   const phone = normalizePhone(body.phone);
@@ -34,7 +35,7 @@ function validateCheckout(body, methods, points, subtotal) {
 
   const m = methods.find((x) => x.code === body.delivery && x.active);
   if (!m) throw new OrderError('Выберите способ доставки');
-  const city = str(body.city, 80);
+  const city = ext ? ext.cityName : str(body.city, 80);
   let address = str(body.address, 250);
   let point = '';
   let door = false;
@@ -47,10 +48,10 @@ function validateCheckout(body, methods, points, subtotal) {
     if (!city) throw new OrderError('Укажите город доставки');
     if (!cityAllowed(m, city)) throw new OrderError(`«${m.title}» работает только в: ${m.cities}. Выберите другой способ`);
     if (m.kind === 'courier') door = true;
-    if (m.kind === 'tc') door = body.mode === 'door';
+    if (m.kind === 'tc') door = ext ? ext.door : body.mode === 'door';
     if (door && address.length < 5) throw new OrderError('Укажите адрес доставки: улицу, дом и квартиру');
     if (!door) {
-      point = str(body.tcpoint, 250);
+      point = ext ? ext.pointText : str(body.tcpoint, 250);
       if (point.length < 3) throw new OrderError('Укажите пункт выдачи: адрес или номер отделения');
       address = '';
     }
@@ -58,10 +59,10 @@ function validateCheckout(body, methods, points, subtotal) {
   const pay = PAY_METHODS[body.pay] ? body.pay : '';
   if (!pay) throw new OrderError('Выберите способ оплаты');
   if (pay === 'cod' && m.kind === 'tc') throw new OrderError('Для доставки транспортной компанией нужна онлайн-оплата');
-  const q = quote(m, subtotal, door);
+  const q = ext ? { price: ext.price, free: ext.free } : quote(m, subtotal, door);
   return {
     name, phone, email, comment: str(body.comment, 500), city: m.kind === 'pickup' ? '' : city, address, point, door, pay,
-    delivery: m, deliveryCost: q.price, total: subtotal + q.price,
+    delivery: m, deliveryCost: q.price, total: subtotal + q.price, meta: ext ? ext.meta : null,
   };
 }
 
@@ -103,10 +104,11 @@ async function createOrder(db, { form, priced, catalog, idemKey, vid, sid, sourc
     const ins = await c.query(
       `INSERT INTO webshop.orders (number, token, idem_key, customer_id, name, phone, email, delivery_code, delivery_title, delivery_kind,
                                 delivery_city, delivery_address, delivery_point, delivery_door, delivery_cost, pay_method, subtotal, total,
-                                comment, vid, sid, source)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22) RETURNING id`,
+                                comment, vid, sid, source, delivery_meta)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING id`,
       [number, token, idemKey || null, cust.rows[0].id, form.name, form.phone, form.email, d.code, d.title, d.kind,
-        form.city, form.address, form.point, form.door, form.deliveryCost, form.pay, subtotal, total, form.comment, vid || '', sid || '', source || '']);
+        form.city, form.address, form.point, form.door, form.deliveryCost, form.pay, subtotal, total, form.comment, vid || '', sid || '', source || '',
+        form.meta ? JSON.stringify(form.meta) : null]);
     const orderId = ins.rows[0].id;
     for (const l of lines) {
       await c.query(

@@ -8,13 +8,22 @@ const { ROLES } = require('./auth');
 const KIND = { pickup: 'Самовывоз', courier: 'Курьер', tc: 'Транспортная компания' };
 const money = (v) => { const n = parseFloat(String(v ?? '').replace(',', '.').replace(/\s/g, '')); return Number.isFinite(n) && n >= 0 ? Math.min(n, 1e7) : 0; };
 
-module.exports = function mount({ db, auth, render, fmt, router, settings, delivery, notifier }) {
+module.exports = function mount({ db, auth, render, fmt, router, settings, delivery, notifier, carriers, cfg }) {
   // ---------- Доставка и оплата ----------
   router.get('/delivery', auth.require('delivery'), async (req, res, next) => {
     try {
       delivery.invalidate();
       const d = await delivery.all();
+      const tcs = d.methods.filter((m) => m.kind === 'tc');
       const body = html`
+      <section class="card card--pad">
+        <header class="card__h"><div><h2>Расчёт по API</h2><p class="muted">Транспортные компании могут считать цену и срок доставки онлайн: покупатель выбирает город и пункт выдачи из списка, цену считает сервер. Если API недоступен, действует фиксированная цена из настроек ниже.</p></div></header>
+        <ul class="apilist">${tcs.map((m) => html`<li><b>${m.title}</b>
+          ${carriers.has(m.code)
+            ? html`<span class="chip chip--green">подключён</span>
+              <form class="inline" method="post" action="/admin/delivery/check/${m.code}">${req.adminCsrf}<button class="btn btn--sm" type="submit">Проверить подключение</button></form>`
+            : html`<span class="chip chip--gray">цена фиксированная</span>${m.code === 'cdek' ? html` <span class="muted">Для расчёта по API задайте на сервере в <code>.env</code> ключи <code>CDEK_ACCOUNT</code>, <code>CDEK_SECURE</code> и город отправления <code>CDEK_FROM_CITY</code> (подробности в README)</span>` : html` <span class="muted">расчёт по API для этой компании пока не подключён</span>`}`}</li>`)}</ul>
+      </section>
       <section class="card card--pad">
         <header class="card__h"><div><h2>Способы доставки</h2><p class="muted">Покупатель видит активные способы на странице оформления. Бесплатная доставка включается от указанной суммы заказа. Для транспортных компаний цена - «от»: окончательно её подтверждает менеджер.</p></div></header>
         <div class="mlist">
@@ -75,6 +84,24 @@ module.exports = function mount({ db, auth, render, fmt, router, settings, deliv
       res.redirect('/admin/delivery');
     } catch (e) { next(e); }
   });
+  // Проверка подключения к API перевозчика: ключи, город отправления, подсказка города, тестовый тариф, пункты выдачи
+  router.post('/delivery/check/:code', auth.require('delivery'), async (req, res, next) => {
+    try {
+      const carrier = carriers.get(String(req.params.code));
+      if (!carrier) { res.flash('err', 'Расчёт по API для этого способа не подключён'); return res.redirect('/admin/delivery'); }
+      const steps = await carrier.check();
+      const allOk = steps.every((x) => x.ok) && steps.length >= 4;
+      const body = html`
+      <section class="card card--pad">
+        <header class="card__h"><div><h2>Проверка подключения: ${carrier.title}</h2>
+          <p class="muted">${allOk ? 'Всё работает: цена и срок считаются по API.' : 'Есть проблема. Исправьте её на сервере в .env и пересоздайте контейнер, затем проверьте снова.'}</p></div></header>
+        <ul class="apilist">${steps.map((x) => html`<li><span class="chip ${x.ok ? 'chip--green' : 'chip--red'}">${x.ok ? 'ок' : 'ошибка'}</span> <b>${x.title}</b> <span class="muted">${x.info}</span></li>`)}</ul>
+        <p><a class="btn" href="/admin/delivery">Назад к доставке</a></p>
+      </section>`;
+      await render(req, res, 'delivery', { title: 'Проверка подключения', body });
+    } catch (e) { next(e); }
+  });
+
   router.post('/delivery/method', auth.require('delivery'), async (req, res, next) => {
     try {
       const kind = ['pickup', 'courier', 'tc'].includes(req.body.kind) ? req.body.kind : 'tc';

@@ -141,6 +141,18 @@ const SCHEMA = [
      badge TEXT NOT NULL DEFAULT '',
      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
    )`,
+  // Очередь уведомлений (Telegram): строку кладёт заказ в своей транзакции, отправляет фоновый процесс с повторами
+  `CREATE TABLE IF NOT EXISTS webshop.outbox (
+     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+     kind TEXT NOT NULL,
+     order_id INTEGER,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+     next_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+     attempts INTEGER NOT NULL DEFAULT 0,
+     sent_at TIMESTAMPTZ,
+     error TEXT NOT NULL DEFAULT ''
+   )`,
+  `CREATE INDEX IF NOT EXISTS outbox_due_idx ON webshop.outbox (next_at) WHERE sent_at IS NULL`,
 ];
 
 module.exports = { SCHEMA };

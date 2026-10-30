@@ -8,7 +8,7 @@ const { quote, PAY_METHODS } = require('../delivery');
 const { OrderError, STATUSES, FLOW, validateCheckout, createOrder, getOrderByToken } = require('../orders');
 const { photoUrl } = require('../shopviews');
 
-module.exports = function mount(app, { cfg, db, catalog, carts, tracker, delivery }, shopCtx, send) {
+module.exports = function mount(app, { cfg, db, catalog, carts, tracker, delivery, notifier }, shopCtx, send) {
   const { cartName, cartCountName, cookieOpts } = app.locals.cookies;
   const fmt = dateFmt(cfg.tz);
   const orderLimiter = new sec.RateLimiter(8, 10 * 60_000);
@@ -284,7 +284,7 @@ module.exports = function mount(app, { cfg, db, catalog, carts, tracker, deliver
       const src = who.sid ? await db.query("SELECT source FROM webshop.visits WHERE sid = $1 AND source <> '' ORDER BY at LIMIT 1", [who.sid]) : { rows: [] };
       let order;
       try {
-        order = await createOrder(db, { form: data, priced, catalog, idemKey: String(form.delivery ? req.body.idem || '' : '').slice(0, 40) || null, vid: who.vid, sid: who.sid, source: src.rows[0]?.source || '' });
+        order = await createOrder(db, { form: data, priced, catalog, notifier, idemKey: String(form.delivery ? req.body.idem || '' : '').slice(0, 40) || null, vid: who.vid, sid: who.sid, source: src.rows[0]?.source || '' });
       } catch (e) {
         if (!(e instanceof OrderError)) throw e;
         return renderCheckout(req, res, { form, error: e.message, status: 409 });

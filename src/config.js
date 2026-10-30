@@ -37,6 +37,12 @@ function load(env = process.env) {
     bootstrapAdmin: env.ADMIN_USER && env.ADMIN_PASSWORD ? { username: env.ADMIN_USER, password: env.ADMIN_PASSWORD } : null,
     // Как долго держать кэш каталога в памяти (сек): товары и остатки правятся в приложении, сайт подхватывает сам.
     catalogTtl: intEnv(env.CATALOG_TTL, 30),
+    // Уведомления о новых заказах в Telegram: токен бота (@BotFather) и один или несколько чатов через запятую (число или @канал).
+    notify: {
+      telegramToken: (env.TELEGRAM_BOT_TOKEN || '').trim(),
+      telegramChatIds: (env.TELEGRAM_CHAT_ID || '').split(/[\s,;]+/).filter(Boolean),
+      telegramApi: (env.TELEGRAM_API_URL || 'https://api.telegram.org').replace(/\/+$/, ''),
+    },
     db: {
       host: env.DB_HOST || 'localhost',
       port: intEnv(env.DB_PORT, 5432),

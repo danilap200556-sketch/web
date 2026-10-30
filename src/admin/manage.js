@@ -8,7 +8,7 @@ const { ROLES } = require('./auth');
 const KIND = { pickup: 'Самовывоз', courier: 'Курьер', tc: 'Транспортная компания' };
 const money = (v) => { const n = parseFloat(String(v ?? '').replace(',', '.').replace(/\s/g, '')); return Number.isFinite(n) && n >= 0 ? Math.min(n, 1e7) : 0; };
 
-module.exports = function mount({ db, auth, render, fmt, router, settings, delivery }) {
+module.exports = function mount({ db, auth, render, fmt, router, settings, delivery, notifier }) {
   // ---------- Доставка и оплата ----------
   router.get('/delivery', auth.require('delivery'), async (req, res, next) => {
     try {
@@ -184,6 +184,33 @@ module.exports = function mount({ db, auth, render, fmt, router, settings, deliv
     } catch (e) { next(e); }
   });
 
+  // ---------- Уведомления о заказах ----------
+  async function notifyCard(req) {
+    const st = await notifier.status();
+    const when = (d) => (d ? fmt.dateTime(d) : 'ещё не было');
+    return html`<section class="card card--pad"><h2>Уведомления о новых заказах</h2>
+      ${st.enabled
+        ? html`<p><span class="chip chip--green">Telegram подключён</span> чатов: <b>${st.chats}</b>. Последнее отправлено: ${when(st.last_sent)}.
+            ${st.waiting ? html`В очереди: <b>${st.waiting}</b>.` : ''}</p>
+          ${st.failed ? html`<p><span class="chip chip--red">Не доставлено</span> после всех попыток: <b>${st.failed}</b>${st.last_error ? html` (${st.last_error})` : ''}. Проверьте токен бота и чат: бот должен быть добавлен в чат и иметь право писать.</p>` : ''}
+          ${!st.failed && st.waiting && st.last_error ? html`<p class="muted">Последняя ошибка: ${st.last_error}. Отправка повторится сама.</p>` : ''}
+          <form method="post" action="/admin/notify/test">${req.adminCsrf}<button class="btn" type="submit">Отправить тестовое сообщение</button></form>`
+        : html`<p><span class="chip chip--gray">Не настроены</span> Новые заказы можно получать в Telegram: создайте бота у <b>@BotFather</b>, добавьте его в нужный чат и впишите на сервере в файл <code>.env</code> строки
+            <code>TELEGRAM_BOT_TOKEN</code> и <code>TELEGRAM_CHAT_ID</code> (несколько чатов через запятую), затем перезапустите магазин. Подробности в README.</p>`}
+    </section>`;
+  }
+  router.post('/notify/test', auth.require('settings'), async (req, res, next) => {
+    try {
+      if (!notifier.enabled()) res.flash('err', 'Telegram не настроен: задайте TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID в .env');
+      else {
+        const r = await notifier.test();
+        const bad = r.filter((x) => !x.ok);
+        res.flash(bad.length ? 'err' : 'ok', bad.length ? `Не отправлено: ${bad.map((x) => `${x.chat}: ${x.error}`).join('; ')}` : `Тестовое сообщение отправлено (чатов: ${r.length})`);
+      }
+      res.redirect('/admin/settings');
+    } catch (e) { next(e); }
+  });
+
   // ---------- Настройки магазина ----------
   router.get('/settings', auth.require('settings'), async (req, res, next) => {
     try {
@@ -202,7 +229,8 @@ module.exports = function mount({ db, auth, render, fmt, router, settings, deliv
       </section>
       <section class="card card--pad"><h2>Откуда берутся товары</h2>
         <p>Модели, цены, фото и остатки сайт читает из общей базы приложения «Склад» (только чтение) и обновляет раз в полминуты. Размеры одной модели склеиваются по артикулу: <code>DD1391-100_42</code> - модель <code>DD1391-100</code>, размер 42. Заказы с сайта держат товар в резерве, пока их не отправили: после отправки списывайте его в приложении.</p>
-        <p class="muted">Цены меняются в приложении. Здесь они не правятся.</p></section>`;
+        <p class="muted">Цены меняются в приложении. Здесь они не правятся.</p></section>
+      ${await notifyCard(req)}`;
       await render(req, res, 'settings', { title: 'Настройки', body });
     } catch (e) { next(e); }
   });

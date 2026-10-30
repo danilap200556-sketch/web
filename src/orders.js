@@ -66,7 +66,7 @@ function validateCheckout(body, methods, points, subtotal) {
 }
 
 // Создаёт заказ одной транзакцией. priced - результат cart.price() (только годные позиции).
-async function createOrder(db, { form, priced, catalog, idemKey, vid, sid, source }) {
+async function createOrder(db, { form, priced, catalog, idemKey, vid, sid, source, notifier }) {
   const lines = priced.lines.filter((l) => !l.gone && !l.out && l.qty > 0);
   if (!lines.length) throw new OrderError('Корзина пуста');
   const result = await db.tx(async (c) => {
@@ -116,9 +116,11 @@ async function createOrder(db, { form, priced, catalog, idemKey, vid, sid, sourc
           l.size.label, l.model.cover || null, l.price, l.qty]);
     }
     await c.query("INSERT INTO webshop.order_events (order_id, kind, text) VALUES ($1, 'status', 'Заказ оформлен на сайте')", [orderId]);
+    if (notifier) await notifier.enqueue(c, orderId); // уведомление в той же транзакции: заказ без него не появится
     return { number, token, orderId, total, repeated: false };
   });
   catalog.invalidate();
+  if (notifier && !result.repeated) notifier.kick();
   return result;
 }
 

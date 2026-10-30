@@ -8,6 +8,7 @@ const { createSettings } = require('./settings');
 const { createDelivery } = require('./delivery');
 const { createCarts } = require('./cart');
 const { createTracker } = require('./track');
+const { createWriteoff } = require('./writeoff');
 const { currentSeason, SEASONS } = require('./seasons');
 const { DEPARTMENTS } = require('./model');
 const { createMedia } = require('./media');
@@ -27,7 +28,8 @@ function createApp(cfg, db) {
   const carts = createCarts(db);
   const tracker = createTracker(db, cfg);
   const media = createMedia(db);
-  const services = { cfg, db, settings, catalog, delivery, carts, tracker, media };
+  const writeoff = createWriteoff(db);
+  const services = { cfg, db, settings, catalog, delivery, carts, tracker, media, writeoff };
   app.locals.services = services;
 
   // --- Заголовки безопасности. Скрипты и стили - только свои файлы (без inline).
@@ -137,7 +139,7 @@ function createApp(cfg, db) {
     res.status(500).type('text').send('Что-то пошло не так. Попробуйте ещё раз через минуту.');
   });
 
-  app.locals.shutdown = async () => { await tracker.flush(); };
+  app.locals.shutdown = async () => { writeoff.stop(); await tracker.flush(); };
   return app;
 }
 

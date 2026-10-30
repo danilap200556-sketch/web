@@ -10,7 +10,7 @@ const { pager } = require('./layout');
 const PAGE = 25;
 const NEXT_LABEL = { new: 'Подтвердить заказ', confirmed: 'Отметить оплаченным', paid: 'Отметить собранным', packed: 'Отметить отправленным', shipped: 'Отметить полученным' };
 
-module.exports = function mount({ db, auth, render, fmt, chip, router, catalog }) {
+module.exports = function mount({ db, auth, render, fmt, chip, router, catalog, writeoff }) {
   // ---------- Список ----------
   router.get('/orders', auth.require('orders'), async (req, res, next) => {
     try {
@@ -96,8 +96,7 @@ module.exports = function mount({ db, auth, render, fmt, chip, router, catalog }
       const st = STATUSES[o.status];
       const next_ = FLOW[FLOW.indexOf(o.status) + 1];
       const publicUrl = `/order/${o.number}?t=${o.token}`;
-      const csrf = req.adminCsrf || '';
-      void csrf;
+      const wstate = (await writeoff.states([o.number])).get(o.number);
       const body = html`
       <div class="order">
         <div class="order__main">
@@ -114,7 +113,7 @@ module.exports = function mount({ db, auth, render, fmt, chip, router, catalog }
                 <button class="btn" type="submit">Сменить статус</button>
               </form>
             </div>
-            ${o.status === 'packed' ? html`<p class="hint">Перед отправкой спишите товар со склада в приложении «Склад»: пока заказ не отправлен, сайт держит эти пары в резерве.</p>` : ''}
+            ${o.status === 'packed' && wstate === 'pending' ? html`<p class="hint">Заказ собран и стоит в очереди списания. Спишите пары со склада в приложении «Склад»: вкладка «Заказы Маркета» → «Списать со склада…» → «Заказы сайта…».</p>` : ''}
           </section>
 
           <section class="card">
@@ -158,6 +157,12 @@ module.exports = function mount({ db, auth, render, fmt, chip, router, catalog }
               <input name="track" value="${o.track_number}" placeholder="Трек-номер" maxlength="60"><button class="btn" type="submit">Сохранить</button></form>
           </section>
           <section class="card card--pad">
+            <h2>Склад</h2>
+            ${wstate ? html`<p><span class="chip chip--${({ pending: 'amber', writing: 'blue', written_off: 'green', cancel_requested: 'orange', returning: 'blue', returned: 'gray', cancelled: 'gray' })[wstate] || 'gray'}">${writeoff.stateText[wstate] || wstate}</span></p>`
+              : writeoff.state.status === 'ok' ? html`<p class="muted">В очередь списания попадает, когда заказ получает статус «Собран». Пока пары в резерве: сайт не продаёт их другим.</p>`
+              : html`<p class="muted">Связь со складом не настроена: ${writeoff.state.message || 'проверяется'}. Пока заказ держит пары в резерве, а списывать их нужно в приложении вручную.</p>`}
+          </section>
+          <section class="card card--pad">
             <h2>Оплата</h2>
             <p>${PAY_METHODS[o.pay_method]?.title || o.pay_method}</p>
             <p class="muted">${PAY_METHODS[o.pay_method]?.hint || ''}</p>
@@ -195,6 +200,7 @@ module.exports = function mount({ db, auth, render, fmt, chip, router, catalog }
           [id, who(req), `Статус: ${STATUSES[cur.status].title} → ${STATUSES[status].title}${note ? '. ' + note : ''}`]);
         return cur.status;
       });
+      if (changed) await writeoff.sync().catch(() => {}); // очередь списания в приложении: собран - поставить, отменён - снять
       catalog.invalidate();
       res.flash('ok', changed ? `Статус изменён: ${STATUSES[status].title}` : 'Статус не изменился');
       res.redirect(`/admin/orders/${id}`);

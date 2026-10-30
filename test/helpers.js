@@ -53,7 +53,7 @@ async function startShop(suffix, overrides = {}, opts = {}) {
     ADMIN_USER: 'owner1', ADMIN_PASSWORD: 'owner-pass-123', ...overrides,
   });
   const db = createDb(cfg.db);
-  for (const q of APP_SCHEMA) if (opts.sitePrices !== false || !/site_prices/.test(q)) await db.query(q);
+  for (const q of APP_SCHEMA) if ((opts.sitePrices !== false || !/site_prices/.test(q)) && (opts.queue !== false || !/order_writeoffs/.test(q))) await db.query(q);
   await db.query("INSERT INTO warehouses (name) VALUES ('Основной')");
   await db.migrate();
   const app = createApp(cfg, db);
@@ -63,7 +63,7 @@ async function startShop(suffix, overrides = {}, opts = {}) {
   const services = app.locals.services;
   return {
     cfg, db, app, base, services, name,
-    async stop() { await services.tracker.flush(); await new Promise((r) => server.close(r)); await db.end(); },
+    async stop() { await app.locals.shutdown(); await new Promise((r) => server.close(r)); await db.end(); },
   };
 }
 

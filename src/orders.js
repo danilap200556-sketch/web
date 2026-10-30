@@ -1,6 +1,6 @@
 'use strict';
 const crypto = require('crypto');
-const { RESERVING } = require('./catalog');
+const { RESERVING, queueFilter } = require('./catalog');
 const { quote, cityAllowed, PAY_METHODS } = require('./delivery');
 const { normalizePhone, isEmail, str } = require('./util');
 
@@ -81,7 +81,7 @@ async function createOrder(db, { form, priced, catalog, idemKey, vid, sid, sourc
       `SELECT p.id,
               GREATEST(COALESCE((SELECT SUM(quantity) FROM stock WHERE product_id = p.id), 0), 0)::int
               - COALESCE((SELECT SUM(oi.qty) FROM webshop.order_items oi JOIN webshop.orders o ON o.id = oi.order_id
-                           WHERE oi.product_id = p.id AND o.status = ANY($2)), 0)::int AS free
+                           WHERE oi.product_id = p.id AND o.status = ANY($2) ${queueFilter(catalog.queueOk !== false)}), 0)::int AS free
          FROM products p WHERE p.id = ANY($1)`, [ids, RESERVING]);
     const free = new Map(avail.rows.map((r) => [r.id, r.free]));
     const short = lines.filter((l) => (free.get(l.pid) ?? 0) < l.qty);

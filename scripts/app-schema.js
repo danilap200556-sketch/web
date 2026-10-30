@@ -35,6 +35,24 @@ module.exports = [
      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
    )`,
   'CREATE INDEX IF NOT EXISTS product_photos_product_idx ON product_photos (product_id, position, id)',
+  // Очередь списания заказов (создаёт приложение «Склад»: списание заказов). Заказ сайта кладёт сюда магазин, списывает кнопка в приложении.
+  `CREATE TABLE IF NOT EXISTS order_writeoffs (
+     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+     source TEXT NOT NULL,
+     account_id INTEGER NOT NULL DEFAULT 0,
+     order_ref TEXT NOT NULL,
+     state TEXT NOT NULL DEFAULT 'pending',
+     lines JSONB NOT NULL DEFAULT '[]'::jsonb,
+     written JSONB NOT NULL DEFAULT '[]'::jsonb,
+     warehouse_id INTEGER,
+     doc_id INTEGER,
+     return_doc_id INTEGER,
+     note TEXT NOT NULL DEFAULT '',
+     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+     written_at TIMESTAMPTZ,
+     returned_at TIMESTAMPTZ,
+     UNIQUE (source, account_id, order_ref)
+   )`,
   // Цены и скидки сайта (ведёт приложение «Склад», вкладка «Цены сайта»)
   `CREATE TABLE IF NOT EXISTS site_prices (
      model_key TEXT PRIMARY KEY,

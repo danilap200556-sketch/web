@@ -8,6 +8,13 @@ const PAGE_SIZE = 24;
 // Заказы в этих статусах держат товар в резерве: из остатка склада вычитаем, пока склад не списал его сам
 const RESERVING = ['new', 'confirmed', 'paid', 'packed'];
 
+// Заказ, который сотрудник уже списал в приложении «Склад» (очередь order_writeoffs), резервом быть перестаёт: его пары
+// уже вычтены из остатка склада, второй раз вычитать нельзя. ok - доступна ли таблица очереди (иначе условия нет).
+const queueFilter = (ok) => (ok
+  ? `AND NOT EXISTS (SELECT 1 FROM order_writeoffs w WHERE w.source = 'site' AND w.account_id = 0 AND w.order_ref = o.number
+                      AND w.state IN ('writing', 'written_off', 'cancel_requested', 'returning'))`
+  : '');
+
 // ---- Поиск ----
 const norm = (s) => String(s || '').toLowerCase().replace(/ё/g, 'е').replace(/[^a-z0-9а-я]+/g, ' ').trim();
 
@@ -110,6 +117,7 @@ class Catalog {
     this.settings = settings;
     this.tz = cfg.tz;
     this.sitePricesState = null;
+    this.queueOk = null; // null - ещё не проверяли; false - очереди списания нет
     this.models = [];
     this.bySlug = new Map();
     this.byProduct = new Map();
@@ -136,9 +144,7 @@ class Catalog {
                   FROM products p
                   LEFT JOIN (SELECT product_id, SUM(quantity)::int AS q FROM stock GROUP BY product_id) st ON st.product_id = p.id`),
       db.query('SELECT product_id, id FROM product_photos ORDER BY product_id, position, id'),
-      db.query(`SELECT oi.product_id, SUM(oi.qty)::int AS q
-                  FROM webshop.order_items oi JOIN webshop.orders o ON o.id = oi.order_id
-                 WHERE o.status = ANY($1) AND oi.product_id IS NOT NULL GROUP BY oi.product_id`, [RESERVING]),
+      this.loadReserved(),
       db.query('SELECT model_key, hidden, featured, badge FROM webshop.model_flags'),
       this.settings.get(),
       this.loadSitePrices(),
@@ -149,7 +155,7 @@ class Catalog {
       photoMap.get(r.product_id).push(r.id);
     }
     const rows = prod.rows.map((r) => ({ ...r, photos: photoMap.get(r.id) || [] }));
-    const resMap = new Map(reserved.rows.map((r) => [r.product_id, r.q]));
+    const resMap = new Map(reserved.map((r) => [r.product_id, r.q]));
     const flagMap = new Map(flags.rows.map((f) => [f.model_key, f]));
 
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: this.tz }).format(new Date()); // YYYY-MM-DD в часовом поясе магазина
@@ -173,6 +179,21 @@ class Catalog {
     this.byProduct = new Map();
     for (const m of models) for (const s of m.sizes) this.byProduct.set(s.id, { model: m, size: s });
     this.loadedAt = Date.now();
+  }
+
+  // Сколько пар держат в резерве незавершённые заказы. Нет очереди списания (таблицы нет или прав) - считаем без неё.
+  async loadReserved() {
+    const sql = (ok) => `SELECT oi.product_id, SUM(oi.qty)::int AS q
+                           FROM webshop.order_items oi JOIN webshop.orders o ON o.id = oi.order_id
+                          WHERE o.status = ANY($1) AND oi.product_id IS NOT NULL ${queueFilter(ok)} GROUP BY oi.product_id`;
+    try {
+      const r = await this.db.query(sql(this.queueOk !== false), [RESERVING]);
+      return r.rows;
+    } catch (e) {
+      if (this.queueOk === false || (e.code !== '42P01' && e.code !== '42501')) throw e;
+      this.queueOk = false; // без очереди списания: резерв по всем незавершённым заказам
+      return (await this.db.query(sql(false), [RESERVING])).rows;
+    }
   }
 
   // Цены и скидки сайта из таблицы site_prices (её ведёт приложение «Склад», вкладка «Цены сайта»).
@@ -296,4 +317,4 @@ function hash(s) {
 }
 const { sizeOrder: sizeOrderOf } = require('./model');
 
-module.exports = { Catalog, PAGE_SIZE, RESERVING, norm, hash, normalizeCriteria };
+module.exports = { Catalog, PAGE_SIZE, RESERVING, queueFilter, norm, hash, normalizeCriteria };

@@ -164,14 +164,14 @@ async function recentOrders(db, limit = 7) {
   return rows;
 }
 
-async function attention(db) {
+async function attention(db, writeoff) {
   const { rows } = await db.query(
     `SELECT COUNT(*) FILTER (WHERE status = 'new')::int AS fresh,
             COUNT(*) FILTER (WHERE status = 'new' AND created_at < NOW() - INTERVAL '2 hours')::int AS stale,
             COUNT(*) FILTER (WHERE status IN ('confirmed', 'paid'))::int AS to_pack,
             COUNT(*) FILTER (WHERE status = 'packed')::int AS to_ship
        FROM webshop.orders`);
-  return rows[0];
+  return { ...rows[0], toWriteoff: writeoff ? await writeoff.pendingCount() : null };
 }
 
 module.exports = {

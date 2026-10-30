@@ -14,7 +14,7 @@ const ASSET_V = Date.now().toString(36);
 const chip = (status) => html`<span class="chip chip--${STATUSES[status]?.tone || 'gray'}">${STATUSES[status]?.title || status}</span>`;
 
 module.exports = function mount(app, services) {
-  const { cfg, db, catalog, settings } = services;
+  const { cfg, db, catalog, settings, writeoff } = services;
   const auth = createAuth(services);
   const fmt = dateFmt(cfg.tz);
   const router = express.Router();
@@ -31,7 +31,7 @@ module.exports = function mount(app, services) {
     }
     res.status(status).type('html').send(adminPage(req, { section, ...opts }).toString());
   }
-  const ctx = { ...services, auth, render, fmt, chip, router, app };
+  const ctx = { ...services, auth, render, fmt, chip, router, app, writeoff };
   app.locals.adminForbidden = (req) => adminPage(Object.assign(req, { shopName: 'Магазин', assetV: ASSET_V, adminCsrf: '' }), {
     title: 'Нет доступа', section: '',
     body: html`<div class="card card--pad"><h2>Нет доступа</h2><p>У вашей роли (${ROLES[req.admin.user.role].title}) нет доступа к этому разделу.</p><p><a class="btn" href="${homeFor(req.admin.user.role)}">Вернуться</a></p></div>`,
@@ -88,7 +88,7 @@ module.exports = function mount(app, services) {
       const b = await stats.bounds(db, cfg.tz, days);
       const [cur, prev, daily, funnel, sources, devices, statuses, deliveries, cities, sold, recent, attn] = await Promise.all([
         stats.kpis(db, b.lo, b.hi), stats.kpis(db, b.plo, b.lo), stats.daily(db, cfg.tz, b), stats.funnel(db, b), stats.sources(db, b),
-        stats.devices(db, b), stats.statuses(db, b), stats.deliveries(db, b), stats.cities(db, b), stats.topSold(db, b, 6), stats.recentOrders(db, 7), stats.attention(db),
+        stats.devices(db, b), stats.statuses(db, b), stats.deliveries(db, b), stats.cities(db, b), stats.topSold(db, b, 6), stats.recentOrders(db, 7), stats.attention(db, services.writeoff),
       ]);
       // 12 точек для мини-графика: период делится на равные части
       const spark = (key, n = 12) => {
@@ -102,10 +102,11 @@ module.exports = function mount(app, services) {
       const stMap = new Map(statuses.map((s) => [s.status, s]));
       const body = html`
       ${rangePicker('/admin', days, stats.RANGES)}
-      ${attn.fresh || attn.to_pack || attn.to_ship ? html`<div class="attn">
+      ${attn.fresh || attn.to_pack || attn.to_ship || attn.toWriteoff ? html`<div class="attn">
         <a href="/admin/orders?status=new" class="attn__i${attn.stale ? ' is-hot' : ''}"><b>${attn.fresh}</b><span>${plural(attn.fresh, 'новый заказ', 'новых заказа', 'новых заказов')}${attn.stale ? html`, ${attn.stale} ждут больше 2 часов` : ''}</span></a>
         <a href="/admin/orders?status=confirmed" class="attn__i"><b>${attn.to_pack}</b><span>подтверждены, ждут оплаты и сборки</span></a>
         <a href="/admin/orders?status=packed" class="attn__i"><b>${attn.to_ship}</b><span>собраны, готовы к отправке</span></a>
+        ${attn.toWriteoff ? html`<a href="/admin/orders?status=packed" class="attn__i${attn.toWriteoff > 0 ? ' is-hot' : ''}"><b>${attn.toWriteoff}</b><span>ждут списания в приложении «Склад»</span></a>` : ''}
       </div>` : ''}
       <div class="stats stats--dash">
         ${stat({ label: `Выручка ${label}`, value: rub(cur.revenue), delta: pctChange(cur.revenue, prev.revenue), trend: spark('revenue'), hero: true })}

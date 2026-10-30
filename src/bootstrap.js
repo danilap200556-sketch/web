@@ -2,8 +2,10 @@
 const { hashPassword } = require('./security');
 
 // Первый запуск: способы доставки по умолчанию и владелец админки из ADMIN_USER / ADMIN_PASSWORD
-async function bootstrap({ db, cfg, delivery, carts }) {
+async function bootstrap({ db, cfg, delivery, carts, writeoff }) {
   await delivery.ensureDefaults();
+  await writeoff.sync();   // очередь списания: заказы «Собран» встают в неё, отменённые снимаются
+  writeoff.start();
   carts.prune().catch(() => {});
   const { rows } = await db.query('SELECT COUNT(*)::int AS n FROM webshop.admin_users');
   if (!rows[0].n && cfg.bootstrapAdmin) {

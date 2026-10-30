@@ -12,7 +12,8 @@ module.exports = [
      custom_code TEXT,
      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
      market_sku TEXT,
-     market_vendor TEXT NOT NULL DEFAULT ''
+     market_vendor TEXT NOT NULL DEFAULT '',
+     market_category_name TEXT NOT NULL DEFAULT ''
    )`,
   `CREATE TABLE IF NOT EXISTS warehouses (
      id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

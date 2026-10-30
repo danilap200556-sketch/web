@@ -60,7 +60,7 @@ function createDb(cfg) {
   // Таблицы склада создаёт и обновляет настольное приложение - сайт их только читает.
   // Проверяем, что приложение уже подготовило эту базу.
   const required = [
-    ['products', 'sku'], ['products', 'name'], ['products', 'price'], ['products', 'market_vendor'],
+    ['products', 'sku'], ['products', 'name'], ['products', 'price'], ['products', 'market_vendor'], ['products', 'market_category_name'],
     ['stock', 'quantity'], ['product_photos', 'data'], ['product_photos', 'thumb'],
   ];
   async function checkAppSchema() {

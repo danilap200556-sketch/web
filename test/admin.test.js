@@ -89,6 +89,9 @@ test('POST без csrf-токена отклоняется', async () => {
   const { c } = await adminLogin(shop.base, 'owner1', 'owner-pass-123');
   const r = await c.post(`/admin/orders/${orderId}/status`, { status: 'confirmed' });
   assert.equal(r.status, 403);
+  assert.match(r.text, /Страница устарела/); // понятный экран с кнопкой «Вернуться», а не голый текст
+  assert.match(r.text, /не сохранены/);
+  assert.match(r.text, /<a class="btn" href="\/admin/);
   const st = (await shop.db.query('SELECT status FROM webshop.orders WHERE id = $1', [orderId])).rows[0].status;
   assert.equal(st, 'new');
 });

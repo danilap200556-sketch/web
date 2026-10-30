@@ -238,3 +238,27 @@ test('фото отдаются с кэшем, неверные размеры �
   const etag = r.headers.get('etag');
   assert.equal((await c.get(`/media/p/${pid}/360.jpg`, { headers: { 'if-none-match': etag } })).status, 304);
 });
+
+test('отделы «Обувь» и «Одежда» не пустые, даже если в названии нет слова-типа', async () => {
+  const db = shop.db;
+  await addProduct(db, { sku: 'NB550-WG_41', name: 'New Balance 550 White Green', price: 9000, qty: 1 });
+  await addProduct(db, { sku: 'NB550-WG_42', name: 'New Balance 550 White Green', price: 9000, qty: 1 });
+  await addProduct(db, { sku: 'TFZ-1_M', name: 'Nike Tech Fleece Zip', price: 7000, qty: 1 });
+  await addProduct(db, { sku: 'TFZ-1_L', name: 'Nike Tech Fleece Zip', price: 7000, qty: 1 });
+  await addProduct(db, { sku: 'DNK-2_41', name: 'Nike Dunk Low Retro', price: 9500, qty: 1, category: 'Кроссовки' });
+  const c = client(shop.base);
+  // обычные товары с типом в начале названия (регрессия: фильтр сравнивал ключ отдела со slug из адреса, и отделы были пустыми)
+  const base = (await c.get('/catalog?dept=obuv')).text;
+  assert.match(base, /Dunk Low/);
+  assert.doesNotMatch(base, /Tech Fleece/);
+  const red = await c.get('/obuv');
+  assert.equal(red.status, 301);
+  assert.equal(red.headers.get('location'), '/catalog?dept=obuv', '/obuv перенаправляет в каталог отдела');
+  const shoes = (await c.get('/catalog?dept=obuv')).text;
+  assert.match(shoes, /550 White Green/, 'размеры 41-42 -> обувь');
+  assert.match(shoes, /Dunk Low Retro/, 'категория Маркета «Кроссовки» -> обувь');
+  assert.doesNotMatch(shoes, /Tech Fleece Zip/);
+  const clothes = (await c.get('/catalog?dept=odezhda')).text;
+  assert.match(clothes, /Tech Fleece Zip/, 'размеры M/L -> одежда');
+  assert.doesNotMatch(clothes, /550 White Green/);
+});

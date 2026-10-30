@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { splitSku, parseName, deptOf, buildModels, sizeOrder } = require('../src/model');
+const { splitSku, parseName, deptOf, deptOfModel, buildModels, sizeOrder } = require('../src/model');
 const { quote, cityAllowed } = require('../src/delivery');
 const { validateCheckout, OrderError } = require('../src/orders');
 const { normalizePhone, rub, plural } = require('../src/util');
@@ -65,6 +65,38 @@ test('отдел по типу и бренду', () => {
   assert.equal(deptOf('Сумка', 'Longchamp'), 'accessories');
   assert.equal(deptOf('', 'Xiaomi'), 'electronics');
   assert.equal(deptOf('Наушники', 'Sony'), 'electronics');
+});
+
+test('отдел находится и когда название не начинается со слова-типа', () => {
+  const d = (name, extra = {}) => { const p = parseName(name); return deptOfModel({ type: p.type, brand: p.brand, name, category: '', sizes: [], ...extra }); };
+  assert.equal(d('Кроссовки Nike Dunk Low'), 'shoes'); // тип в начале - как раньше
+  assert.equal(d('Мужские кроссовки Nike Air Force 1'), 'shoes');
+  assert.equal(d('Nike Air Force 1 кеды женские'), 'shoes');
+  assert.equal(d('Nike Tech Fleece худи'), 'clothes');
+  assert.equal(d('Мужская футболка Stussy'), 'clothes');
+  assert.equal(d('Беспроводные наушники Sony WH-1000XM5'), 'electronics');
+  assert.equal(d('Nike Dunk Low', { category: 'Кроссовки и кеды' }), 'shoes'); // категория Маркета
+  assert.equal(d('Nike Tech', { category: 'Футболки и майки' }), 'clothes');
+  // без признаков в тексте решают размеры из артикулов, иначе - аксессуары
+  assert.equal(d('New Balance 550 White Green', { sizes: ['41', '42', '43.5'] }), 'shoes');
+  assert.equal(d('Nike Tech Fleece', { sizes: ['S', 'M', 'L'] }), 'clothes');
+  assert.equal(d('Nike Heritage', { sizes: ['ONE SIZE'] }), 'accessories');
+  assert.equal(d('New Balance 550 White Green'), 'accessories');
+  // слова-двойники не путаются с типами
+  assert.equal(d('Кедровый орех'), 'accessories');
+  assert.equal(d('Полотенце Nike'), 'accessories');
+  assert.equal(d('Майкл Корс Jet Set'), 'accessories');
+});
+
+test('отдел модели учитывает категорию Маркета и размеры при сборке', () => {
+  const rows = [
+    { id: 1, sku: 'NB550-WG_41', name: 'New Balance 550 White Green', price: 9000, vendor: '', category: '', created_at: '2026-10-01', qty: 1, photos: [1] },
+    { id: 2, sku: 'NB550-WG_42', name: 'New Balance 550 White Green', price: 9000, vendor: '', category: '', created_at: '2026-10-01', qty: 1, photos: [1] },
+    { id: 3, sku: 'TF-1_M', name: 'Nike Tech Fleece', price: 7000, vendor: '', category: '', created_at: '2026-10-01', qty: 1, photos: [2] },
+    { id: 4, sku: 'DUNK-1_41', name: 'Nike Dunk Low Panda', price: 9000, vendor: '', category: 'Кроссовки', created_at: '2026-10-01', qty: 1, photos: [3] },
+  ];
+  const byKey = Object.fromEntries(buildModels(rows).map((m) => [m.key, m.dept]));
+  assert.deepEqual(byKey, { 'NB550-WG': 'shoes', 'TF-1': 'clothes', 'DUNK-1': 'shoes' });
 });
 
 test('размеры одной модели склеиваются; резерв вычитается из наличия', () => {

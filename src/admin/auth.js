@@ -81,7 +81,7 @@ function createAuth({ cfg, db }) {
       return res.status(403).type('html').send(req.app.locals.adminForbidden(req));
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') {
-      if (!sec.safeEqual(req.body._csrf ?? '', a.csrf)) return res.status(403).type('text').send('Страница устарела. Вернитесь назад, обновите её и повторите.');
+      if (!sec.safeEqual(req.body._csrf ?? '', a.csrf)) return res.status(403).type('html').send(req.app.locals.adminStale(req));
     }
     next();
   };

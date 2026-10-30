@@ -73,8 +73,11 @@ const parseQuery = (q) => norm(q).split(' ').filter(Boolean).slice(0, 8).map(alt
 // ---- Отбор по условиям ----
 function arr(v) { return v === undefined || v === null || v === '' ? [] : Array.isArray(v) ? v : [v]; }
 
+// В адресе отдел - slug (obuv, odezhda), у модели - ключ (shoes, clothes): сравнивать нужно по ключу.
+const DEPT_BY_SLUG = Object.fromEntries(Object.entries(DEPARTMENTS).map(([k, v]) => [v.slug, k]));
+
 function passes(m, c, except) {
-  if (c.dept && except !== 'dept' && m.dept !== c.dept) return false;
+  if (c.dept && except !== 'dept' && m.dept !== DEPT_BY_SLUG[c.dept]) return false;
   if (c.types.length && except !== 'type' && !c.types.includes(m.type)) return false;
   if (c.brands.length && except !== 'brand' && !c.brands.includes(m.brand)) return false;
   if (c.sizes.length && except !== 'size' && !m.sizes.some((s) => s.qty > 0 && c.sizes.includes(s.size))) return false;
@@ -140,7 +143,7 @@ class Catalog {
     const { db } = this;
     const [prod, photos, reserved, flags, cfg, sitePrices] = await Promise.all([
       db.query(`SELECT p.id, p.sku, p.name, p.description, p.price::float8 AS price, COALESCE(p.market_vendor, '') AS vendor,
-                       p.created_at, GREATEST(COALESCE(st.q, 0), 0)::int AS qty
+                       COALESCE(p.market_category_name, '') AS category, p.created_at, GREATEST(COALESCE(st.q, 0), 0)::int AS qty
                   FROM products p
                   LEFT JOIN (SELECT product_id, SUM(quantity)::int AS q FROM stock GROUP BY product_id) st ON st.product_id = p.id`),
       db.query('SELECT product_id, id FROM product_photos ORDER BY product_id, position, id'),

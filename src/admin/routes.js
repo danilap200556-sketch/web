@@ -37,6 +37,18 @@ module.exports = function mount(app, services) {
     body: html`<div class="card card--pad"><h2>Нет доступа</h2><p>У вашей роли (${ROLES[req.admin.user.role].title}) нет доступа к этому разделу.</p><p><a class="btn" href="${homeFor(req.admin.user.role)}">Вернуться</a></p></div>`,
   }).toString();
 
+  // Токен формы не подошёл: страница открыта до повторного входа или слишком давно. Ничего не сохранено - объясняем и даём вернуться.
+  app.locals.adminStale = (req) => {
+    let back = homeFor(req.admin.user.role);
+    try { const u = new URL(req.get('referer') || ''); if (u.host === req.get('host') && u.pathname.startsWith('/admin')) back = u.pathname + u.search; } catch { /* без ссылки назад */ }
+    return adminPage(Object.assign(req, { shopName: 'Магазин', assetV: ASSET_V, adminCsrf: '' }), {
+      title: 'Страница устарела', section: '',
+      body: html`<div class="card card--pad"><h2>Страница устарела</h2>
+        <p>Эта страница была открыта до того, как вы заново вошли в админку (например, в другой вкладке), или слишком давно, поэтому изменения <b>не сохранены</b>.</p>
+        <p>Нажмите «Вернуться», страница обновится, и повторите действие.</p><p><a class="btn" href="${back}">Вернуться</a></p></div>`,
+    }).toString();
+  };
+
   // ---------- Вход / выход ----------
   const loginPage = ({ error = '', username = '', next = '' } = {}) => html`<!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex, nofollow">

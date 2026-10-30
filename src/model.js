@@ -120,6 +120,47 @@ function deptOf(type, brand) {
   return 'accessories';
 }
 
+// Слова-типы в любом месте текста и в любой форме: «Мужские кроссовки Nike», «Кеды женские», категория Маркета «Футболки».
+// Корень ищется с начала слова. Первым срабатывает тот, что стоит в тексте раньше.
+const W = '(?<![\\p{L}\\p{N}])';
+const END = '(?![\\p{L}])';
+const DEPT_WORDS = [
+  ['shoes', new RegExp(`${W}(?:кроссов|ботин|ботильон|шл[её]панц|слипон|мюл[иеь]|сабо${END}|бутс|тапоч|слайд|мокасин|слипер|сандал|лофер|сапог|туфл|эспадрил|балетк|кед(?:ы|ов|а)?${END}|угг(?:и|ов)?${END}|кроксы${END})`, 'iu')],
+  ['clothes', new RegExp(`${W}(?:свитшот|худи${END}|футболк|куртк|жилет|брюк|шорт|лонгслив|толстовк|пуховик|джинс|рубашк|поло${END}|ветровк|бомбер|костюм|майк[аиу]?${END}|кофт|джемпер|свитер|пальто${END}|плащ|платье|юбк|комбинезон|леггинс|лосин)`, 'iu')],
+  ['accessories', new RegExp(`${W}(?:сумк|рюкзак|кепк|бейсболк|шапк|шарф|носк|ремен|ремн|кошел|очки${END}|панам|перчат|варежк|зонт|браслет|колье${END}|косметичк|пауч|поясн|балаклав)`, 'iu')],
+  ['electronics', new RegExp(`${W}(?:наушник|колонк|часы${END}|смартфон|телефон|планшет|ноутбук|пылесос|камер|приставк|гаджет)`, 'iu')],
+];
+function deptByWords(text) {
+  const t = String(text || '');
+  let best = null;
+  for (const [dept, re] of DEPT_WORDS) {
+    const m = re.exec(t);
+    if (m && (!best || m.index < best.index)) best = { dept, index: m.index };
+  }
+  return best ? best.dept : '';
+}
+
+// Запасной признак по размерам из артикулов: 35-49 - обувь, XS-XXXL - одежда, «один размер» - аксессуар.
+function deptBySizes(sizes) {
+  let shoes = 0, letters = 0;
+  for (const z of sizes) {
+    const n = /^\d{2}(?:\.\d)?$/.test(z) ? parseFloat(z) : NaN;
+    if (n >= 33 && n <= 50) shoes++;
+    else if (/^(?:XXXS|XXS|XS|S|M|L|XL|XXL|XXXL)$/.test(z)) letters++;
+  }
+  if (!shoes && !letters) return '';
+  return shoes >= letters ? 'shoes' : 'clothes';
+}
+
+// Отдел модели: тип в начале названия (как раньше) -> слова в категории Маркета -> слова в названии -> бренд электроники ->
+// размеры -> «Аксессуары». Тип из начала названия остаётся главным, поэтому у уже разобранных товаров ничего не меняется.
+function deptOfModel({ type, brand, name, category, sizes }) {
+  const first = TYPE_TO_DEPT[String(type).split(' ')[0].toLowerCase()];
+  if (first) return first;
+  return deptByWords(category) || deptByWords(name) || (ELECTRONICS_BRANDS.has(brand) ? 'electronics' : '')
+    || deptBySizes(sizes || []) || 'accessories';
+}
+
 // Цена модели на сайте. Если в приложении «Склад» (вкладка «Цены сайта») задана цена сайта - берётся она и действует на все
 // размеры, иначе цена склада (products.price) у каждого размера. Скидка действует с `from` по `to` включительно (даты
 // YYYY-MM-DD в часовом поясе магазина; пусто - без границы). Цена со скидкой не меньше нуля и меньше обычной, иначе её нет.
@@ -135,7 +176,7 @@ function sitePrice(sp, today) {
 }
 
 // Из строк товаров склада (все размеры) собирает модели.
-// rows: { id, sku, name, description, price, vendor, created_at, qty, photos: [photoId...] }
+// rows: { id, sku, name, description, price, vendor, category, created_at, qty, photos: [photoId...] }
 // opts.sitePrices: Map(ключ модели -> { price, salePrice, from, to }), opts.today: 'YYYY-MM-DD'
 function buildModels(rows, opts = {}) {
   const reserved = opts.reserved || new Map(); // product_id -> зарезервировано
@@ -153,7 +194,7 @@ function buildModels(rows, opts = {}) {
     const named = items.find((i) => i.name && i.name.trim() && i.name.trim() !== i.sku.trim());
     if (!named) continue; // у товара нет названия (в названии стоит артикул) - на витрину не выводим
     const p = parseName(named.name, named.vendor);
-    const dept = deptOf(p.type, p.brand);
+    const dept = deptOfModel({ type: p.type, brand: p.brand, name: named.name, category: named.category, sizes: items.map((i) => i.size).filter(Boolean) });
     const sizes = items
       .map((i) => {
         const avail = Math.max(0, (i.qty || 0) - (reserved.get(i.id) || 0));
@@ -203,4 +244,4 @@ function buildModels(rows, opts = {}) {
   return models;
 }
 
-module.exports = { DEPARTMENTS, splitSku, parseName, deptOf, buildModels, sizeOrder, sitePrice, TYPE_TO_DEPT };
+module.exports = { DEPARTMENTS, splitSku, parseName, deptOf, deptOfModel, buildModels, sizeOrder, sitePrice, TYPE_TO_DEPT };

@@ -31,10 +31,10 @@ async function jpeg(color = '#ffffff') {
 }
 
 // Товар склада: размеры одной модели - отдельные строки с общей частью артикула
-async function addProduct(db, { sku, name, price = 10000, qty = 1, photo = true, vendor = '', created }) {
+async function addProduct(db, { sku, name, price = 10000, qty = 1, photo = true, vendor = '', category = '', created }) {
   const { rows } = await db.query(
-    'INSERT INTO products (sku, name, description, price, market_vendor, created_at) VALUES ($1, $2, $3, $4, $5, COALESCE($6, NOW())) RETURNING id',
-    [sku, name, '', price, vendor, created || null]);
+    'INSERT INTO products (sku, name, description, price, market_vendor, market_category_name, created_at) VALUES ($1, $2, $3, $4, $5, $7, COALESCE($6, NOW())) RETURNING id',
+    [sku, name, '', price, vendor, created || null, category]);
   const id = rows[0].id;
   if (qty) await db.query('INSERT INTO stock (product_id, warehouse_id, quantity) VALUES ($1, 1, $2)', [id, qty]);
   if (photo) {

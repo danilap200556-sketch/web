@@ -78,19 +78,26 @@ function createDb(cfg) {
   async function migrate() {
     const client = await pool.connect();
     try {
-      await client.query('SELECT pg_advisory_lock(727301)');
+      await client.query('BEGIN');
+      // Блокировка живёт до конца транзакции: сеансовая (pg_advisory_lock) через пулер соединений Яндекса (порт 6432, режим
+      // transaction) могла бы остаться на чужом соединении и повесить следующий запуск. Заодно миграция атомарна.
+      await client.query('SELECT pg_advisory_xact_lock(727301)');
       await client.query('CREATE SCHEMA IF NOT EXISTS webshop');
       await client.query('CREATE TABLE IF NOT EXISTS webshop.meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
       const cur = await client.query("SELECT value FROM webshop.meta WHERE key = 'schema_rev'");
       const have = cur.rows[0] ? parseInt(cur.rows[0].value, 10) : 0;
-      if (have >= SCHEMA.length) return have;
-      for (let i = have; i < SCHEMA.length; i++) await client.query(SCHEMA[i]);
-      await client.query(
-        `INSERT INTO webshop.meta (key, value) VALUES ('schema_rev', $1)
-         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [String(SCHEMA.length)]);
-      return SCHEMA.length;
+      if (have < SCHEMA.length) {
+        for (let i = have; i < SCHEMA.length; i++) await client.query(SCHEMA[i]);
+        await client.query(
+          `INSERT INTO webshop.meta (key, value) VALUES ('schema_rev', $1)
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [String(SCHEMA.length)]);
+      }
+      await client.query('COMMIT');
+      return Math.max(have, SCHEMA.length);
+    } catch (e) {
+      try { await client.query('ROLLBACK'); } catch { /* соединение закроется само */ }
+      throw e;
     } finally {
-      try { await client.query('SELECT pg_advisory_unlock(727301)'); } catch { /* соединение закроется само */ }
       client.release();
     }
   }

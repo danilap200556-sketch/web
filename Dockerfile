@@ -5,6 +5,8 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
 COPY server.js ./
 COPY src ./src
+# Только создание/сброс пароля сотрудников админки: docker compose exec shop node scripts/create-admin.js <логин>
+COPY scripts/create-admin.js ./scripts/create-admin.js
 COPY public ./public
 USER node
 EXPOSE 3000

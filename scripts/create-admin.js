@@ -16,10 +16,11 @@ async function ask(q) {
 async function main() {
   const username = String(process.argv[2] || '').toLowerCase();
   const role = process.argv[3] || 'owner';
-  if (!/^[a-z0-9._-]{3,40}$/.test(username) || !ROLES[role]) {
-    console.error('Использование: npm run create-admin -- <логин: латиница, 3-40 знаков> [owner|manager|editor]');
-    process.exit(2);
-  }
+  const usage = 'Использование: create-admin <логин: латиница и цифры, 3-40 знаков> [owner|manager|editor]\n' +
+    '  разработка: npm run create-admin -- <логин>;  сервер: sudo docker compose exec shop node scripts/create-admin.js <логин>\n' +
+    '  если такой логин уже есть, ему меняется пароль (так сбрасывают забытый пароль)';
+  if (username === '-h' || username === '--help') { console.log(usage); process.exit(0); }
+  if (!/^[a-z0-9][a-z0-9._-]{2,39}$/.test(username) || !ROLES[role]) { console.error(usage); process.exit(2); }
   const password = process.env.ADMIN_PASSWORD || await ask('Пароль (от 8 знаков): ');
   const err = validateNewPassword(password);
   if (err) { console.error(err); process.exit(2); }

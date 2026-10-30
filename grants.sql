@@ -4,7 +4,11 @@
 --
 -- 1. Создайте пользователя (shop_user) в консоли Яндекс Облака: Managed Service for PostgreSQL -> Пользователи.
 -- 2. Выполните этот файл под владельцем базы (тем же, под кем работает приложение «Склад»).
-CREATE SCHEMA IF NOT EXISTS webshop AUTHORIZATION shop_user;
+-- Схему webshop магазин создаёт сам при запуске (CREATE SCHEMA IF NOT EXISTS). PostgreSQL проверяет право CREATE на базу
+-- раньше, чем смотрит, есть ли уже такая схема, поэтому право нужно, даже если схему создали заранее. Создавать её здесь
+-- через AUTHORIZATION shop_user не нужно: это требует права «действовать от имени» shop_user, которого у владельца базы
+-- в Яндекс Облаке обычно нет (ошибка «must be able to SET ROLE»).
+DO $$ BEGIN EXECUTE format('GRANT CREATE ON DATABASE %I TO shop_user', current_database()); END $$;
 GRANT SELECT ON products, stock, product_photos TO shop_user;
 -- Цены и скидки сайта: таблицу создаёт и правит приложение «Склад» (вкладка «Цены сайта»), сайт её читает.
 -- Выполняйте после первого запуска новой версии приложения (она создаёт таблицу); до этого сайт работает на ценах склада.

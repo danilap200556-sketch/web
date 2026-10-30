@@ -35,4 +35,14 @@ module.exports = [
      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
    )`,
   'CREATE INDEX IF NOT EXISTS product_photos_product_idx ON product_photos (product_id, position, id)',
+  // Цены и скидки сайта (ведёт приложение «Склад», вкладка «Цены сайта»)
+  `CREATE TABLE IF NOT EXISTS site_prices (
+     model_key TEXT PRIMARY KEY,
+     price NUMERIC(12,2) NOT NULL CHECK (price >= 0),
+     sale_price NUMERIC(12,2) CHECK (sale_price IS NULL OR sale_price >= 0),
+     sale_from DATE,
+     sale_to DATE,
+     updated_by TEXT NOT NULL DEFAULT '',
+     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+   )`,
 ];

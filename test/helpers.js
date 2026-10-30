@@ -44,7 +44,7 @@ async function addProduct(db, { sku, name, price = 10000, qty = 1, photo = true,
   return id;
 }
 
-async function startShop(suffix, overrides = {}) {
+async function startShop(suffix, overrides = {}, opts = {}) {
   const name = `webshop_test_${suffix}`;
   await freshDatabase(name);
   const cfg = load({
@@ -53,7 +53,7 @@ async function startShop(suffix, overrides = {}) {
     ADMIN_USER: 'owner1', ADMIN_PASSWORD: 'owner-pass-123', ...overrides,
   });
   const db = createDb(cfg.db);
-  for (const q of APP_SCHEMA) await db.query(q);
+  for (const q of APP_SCHEMA) if (opts.sitePrices !== false || !/site_prices/.test(q)) await db.query(q);
   await db.query("INSERT INTO warehouses (name) VALUES ('Основной')");
   await db.migrate();
   const app = createApp(cfg, db);
@@ -90,6 +90,15 @@ function client(base) {
   return { get: (p, o) => request('GET', p, o), post: (p, form, o) => request('POST', p, { ...o, form }), jar };
 }
 
+// Цена сайта (в боевой базе её задаёт приложение «Склад»): sale/from/to необязательны, даты 'YYYY-MM-DD'
+async function addSitePrice(db, key, { price, sale = null, from = null, to = null }) {
+  await db.query('INSERT INTO site_prices (model_key, price, sale_price, sale_from, sale_to) VALUES ($1, $2, $3, $4, $5)', [key, price, sale, from, to]);
+}
+// Дата со сдвигом в днях в часовом поясе магазина (как считает сайт)
+function ymd(offsetDays = 0, tz = 'Europe/Moscow') {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(Date.now() + offsetDays * 86400_000));
+}
+
 async function addAdmin(db, username, role, password = 'pass-12345') {
   await db.query('INSERT INTO webshop.admin_users (username, display_name, password_hash, role) VALUES ($1, $1, $2, $3)', [username, hashPassword(password), role]);
   return password;
@@ -105,4 +114,4 @@ async function adminLogin(base, username, password) {
   return { c, csrf };
 }
 
-module.exports = { startShop, client, addProduct, addAdmin, adminLogin, jpeg };
+module.exports = { startShop, client, addProduct, addSitePrice, ymd, addAdmin, adminLogin, jpeg };

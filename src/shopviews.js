@@ -19,9 +19,16 @@ function sizeRange(m) {
   return `${uniq[0]}–${uniq[uniq.length - 1]}`;
 }
 
+// Цена в карточке: при скидке - новая цена и зачёркнутая старая
+function priceBlock(m, cls = '') {
+  if (m.oldPrice) return html`<span class="price price--sale ${cls}">${rub(m.price)}</span><s class="price-old">${rub(m.oldPrice)}</s>`;
+  return html`<span class="price ${cls}">${m.priceMax > m.price ? 'от ' : ''}${rub(m.price)}</span>`;
+}
+
 function badgeOf(m) {
   if (m.badge) return { text: m.badge, kind: 'accent' };
   if (!m.inStock) return { text: 'Нет в наличии', kind: 'muted' };
+  if (m.discount) return { text: `−${m.discount}%`, kind: 'sale' };
   if (Date.now() - m.createdAt < 21 * 86400_000) return { text: 'Новинка', kind: 'dark' };
   const sizesLeft = m.sizes.filter((s) => s.qty > 0).length;
   if (m.qty <= 3 && sizesLeft <= 2) return { text: 'Последние размеры', kind: 'warn' };
@@ -32,7 +39,6 @@ function card(m, { priority = false } = {}) {
   const b = badgeOf(m);
   const second = m.photos[1];
   const sizes = sizeRange(m);
-  const from = m.priceMax > m.price ? 'от ' : '';
   return html`<a class="card${m.inStock ? '' : ' is-out'}" href="/p/${m.slug}" data-model="${m.key}">
     <div class="card__media">
       ${m.cover ? html`<img class="card__img" src="${photoUrl(m.cover, 640)}" srcset="${photoUrl(m.cover, 360)} 360w, ${photoUrl(m.cover, 640)} 640w"
@@ -46,7 +52,7 @@ function card(m, { priority = false } = {}) {
       <h3 class="card__title">${m.model || m.title}</h3>
       ${m.colorway ? html`<div class="card__color">${m.colorway}</div>` : ''}
       <div class="card__foot">
-        <span class="price">${from}${rub(m.price)}</span>
+        <span class="card__price">${priceBlock(m)}</span>
         ${sizes ? html`<span class="card__sizes">${sizes}</span>` : ''}
       </div>
     </div>
@@ -127,7 +133,8 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
       </a>
       <nav class="nav" id="nav" aria-label="Разделы">
         ${navDepts(ctx)}
-        <a class="nav__link nav__link--sale" href="/catalog?sort=new">Новинки</a>
+        ${ctx.saleCount ? html`<a class="nav__link nav__link--hot" href="/catalog?sale=1&amp;sort=discount">Скидки</a>` : ''}
+        <a class="nav__link" href="/catalog?sort=new">Новинки</a>
         <a class="nav__link" href="/delivery">Доставка и оплата</a>
       </nav>
       <div class="head__tools">
@@ -195,4 +202,4 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
 
 const countLabel = (n) => `${n} ${plural(n, 'модель', 'модели', 'моделей')}`;
 
-module.exports = { shopPage, card, pagination, photoUrl, sizeRange, badgeOf, countLabel, SEASON_ICON, esc };
+module.exports = { shopPage, card, pagination, photoUrl, sizeRange, badgeOf, priceBlock, countLabel, SEASON_ICON, esc };

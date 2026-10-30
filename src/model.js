@@ -46,7 +46,9 @@ const BRAND_RE = new RegExp(
 const ELECTRONICS_BRANDS = new Set(['Xiaomi', 'Apple', 'Samsung', 'Sony', 'JBL', 'Dyson', 'Garmin', 'Marshall', 'Bose']);
 
 // ---- Размер из артикула ----
-const SIZE_RE = /^(\d{2}(?:[.,]\d)?|XXXS|XXS|XS|S|M|L|XL|XXL|XXXL|OS|ONE\s*SIZE|UNI)(.*)$/i;
+// Размер - в начале «хвоста» после последнего «_», и дальше не продолжается буквой или цифрой: `ABC_SALE` - не размер «S».
+// То же правило в приложении «Склад» (src/siteprices.cpp, SitePrices::modelKey): ключ модели там и тут должен совпадать.
+const SIZE_RE = /^(\d{2}(?:[.,]\d)?|XXXS|XXS|XS|S|M|L|XL|XXL|XXXL|OS|ONE\s*SIZE|UNI)(?![A-Za-z0-9А-Яа-яЁё])(.*)$/i;
 
 function splitSku(sku) {
   const s = String(sku || '').trim();
@@ -118,10 +120,27 @@ function deptOf(type, brand) {
   return 'accessories';
 }
 
+// Цена модели на сайте. Если в приложении «Склад» (вкладка «Цены сайта») задана цена сайта - берётся она и действует на все
+// размеры, иначе цена склада (products.price) у каждого размера. Скидка действует с `from` по `to` включительно (даты
+// YYYY-MM-DD в часовом поясе магазина; пусто - без границы). Цена со скидкой не меньше нуля и меньше обычной, иначе её нет.
+function sitePrice(sp, today) {
+  if (!sp || !(sp.price > 0)) return null;
+  const onSale = sp.salePrice > 0 && sp.salePrice < sp.price && (!sp.from || today >= sp.from) && (!sp.to || today <= sp.to);
+  return {
+    price: onSale ? sp.salePrice : sp.price,
+    oldPrice: onSale ? sp.price : 0,
+    discount: onSale ? Math.max(1, Math.min(99, Math.round((1 - sp.salePrice / sp.price) * 100))) : 0,
+    saleTo: onSale ? sp.to || '' : '',
+  };
+}
+
 // Из строк товаров склада (все размеры) собирает модели.
 // rows: { id, sku, name, description, price, vendor, created_at, qty, photos: [photoId...] }
+// opts.sitePrices: Map(ключ модели -> { price, salePrice, from, to }), opts.today: 'YYYY-MM-DD'
 function buildModels(rows, opts = {}) {
   const reserved = opts.reserved || new Map(); // product_id -> зарезервировано
+  const sitePrices = opts.sitePrices || new Map();
+  const today = opts.today || new Date().toISOString().slice(0, 10);
   const groups = new Map();
   for (const r of rows) {
     const { key, size, note } = splitSku(r.sku);
@@ -142,6 +161,8 @@ function buildModels(rows, opts = {}) {
         return { id: i.id, sku: i.sku, size: i.size, note: i.note, label, qty: avail, price: Number(i.price) || 0, order: sizeOrder(i.size) };
       })
       .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label, 'ru'));
+    const sp = sitePrice(sitePrices.get(key), today);
+    if (sp) for (const s of sizes) s.price = sp.price; // цена сайта - одна на модель, на все размеры
     // Фото лежат у каждого размера отдельно - берём набор того размера, где их больше
     let photoOwner = items[0];
     for (const i of items) if ((i.photos || []).length > (photoOwner.photos || []).length) photoOwner = i;
@@ -169,6 +190,10 @@ function buildModels(rows, opts = {}) {
       cover: photos[0] || 0,
       price,
       priceMax,
+      oldPrice: sp ? sp.oldPrice : 0,
+      discount: sp ? sp.discount : 0,
+      saleTo: sp ? sp.saleTo : '',
+      priceSource: sp ? 'site' : 'warehouse',
       qty: inStock.reduce((a, s) => a + s.qty, 0),
       inStock: inStock.length > 0,
       createdAt: created.length ? Math.max(...created) : 0,
@@ -178,4 +203,4 @@ function buildModels(rows, opts = {}) {
   return models;
 }
 
-module.exports = { DEPARTMENTS, splitSku, parseName, deptOf, buildModels, sizeOrder, TYPE_TO_DEPT };
+module.exports = { DEPARTMENTS, splitSku, parseName, deptOf, buildModels, sizeOrder, sitePrice, TYPE_TO_DEPT };

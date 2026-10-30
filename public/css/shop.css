@@ -538,3 +538,19 @@ select:focus, .field input:focus, .field textarea:focus { border-color: var(--in
 .sug-pop[hidden] { display: none; }
 .sug-pop .sug { display: block; }
 .sug-pop .sug__hint p { margin: 0; }
+
+/* ---------- Скидки ---------- */
+.price--sale { color: var(--accent); }
+.price-old { margin-left: 8px; font-size: 14px; font-weight: 500; color: var(--muted); text-decoration: line-through; text-decoration-thickness: 1.5px; font-variant-numeric: tabular-nums; }
+.price-old--lg { font-size: 20px; margin-left: 0; }
+.card__price { display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 0; }
+.badge--sale { background: var(--accent); color: #fff; }
+.chip.chip--sale { margin: 0; padding: 4px 11px; background: var(--accent); color: #fff; font-size: 14px; font-weight: 750; }
+.nav__link--hot { color: var(--accent); }
+.nav__link--hot:hover { background: var(--accent-soft); color: var(--accent); }
+.saleinfo { display: flex; align-items: center; gap: 8px; margin: -12px 0 20px; font-size: 14px; font-weight: 600; color: var(--accent); }
+.check--sale span { font-weight: 650; color: var(--accent); }
+@media (max-width: 720px) {
+  .price-old { font-size: 12.5px; margin-left: 6px; }
+  .price-old--lg { font-size: 17px; }
+}

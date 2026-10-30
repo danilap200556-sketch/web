@@ -74,6 +74,7 @@ function passes(m, c, except) {
   if (c.min && except !== 'price' && m.price < c.min) return false;
   if (c.max && except !== 'price' && m.price > c.max) return false;
   if (c.inStock && !m.inStock) return false;
+  if (c.sale && !m.oldPrice) return false;
   if (c.keys && !c.keys.has(m.key)) return false;
   return true;
 }
@@ -95,7 +96,8 @@ function normalizeCriteria(raw = {}) {
     min: num(raw.min),
     max: num(raw.max),
     inStock: raw.all === '1' ? false : true,
-    sort: ['new', 'price_asc', 'price_desc', 'popular'].includes(raw.sort) ? raw.sort : 'popular',
+    sale: raw.sale === '1',
+    sort: ['new', 'price_asc', 'price_desc', 'discount', 'popular'].includes(raw.sort) ? raw.sort : 'popular',
     page: Math.max(1, num(raw.page) || 1),
     keys: raw.keys instanceof Set ? raw.keys : null,
   };
@@ -106,6 +108,8 @@ class Catalog {
     this.db = db;
     this.ttl = cfg.catalogTtl * 1000;
     this.settings = settings;
+    this.tz = cfg.tz;
+    this.sitePricesState = null;
     this.models = [];
     this.bySlug = new Map();
     this.byProduct = new Map();
@@ -126,7 +130,7 @@ class Catalog {
 
   async load() {
     const { db } = this;
-    const [prod, photos, reserved, flags, cfg] = await Promise.all([
+    const [prod, photos, reserved, flags, cfg, sitePrices] = await Promise.all([
       db.query(`SELECT p.id, p.sku, p.name, p.description, p.price::float8 AS price, COALESCE(p.market_vendor, '') AS vendor,
                        p.created_at, GREATEST(COALESCE(st.q, 0), 0)::int AS qty
                   FROM products p
@@ -137,6 +141,7 @@ class Catalog {
                  WHERE o.status = ANY($1) AND oi.product_id IS NOT NULL GROUP BY oi.product_id`, [RESERVING]),
       db.query('SELECT model_key, hidden, featured, badge FROM webshop.model_flags'),
       this.settings.get(),
+      this.loadSitePrices(),
     ]);
     const photoMap = new Map();
     for (const r of photos.rows) {
@@ -147,7 +152,8 @@ class Catalog {
     const resMap = new Map(reserved.rows.map((r) => [r.product_id, r.q]));
     const flagMap = new Map(flags.rows.map((f) => [f.model_key, f]));
 
-    const all = buildModels(rows, { reserved: resMap });
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: this.tz }).format(new Date()); // YYYY-MM-DD в часовом поясе магазина
+    const all = buildModels(rows, { reserved: resMap, sitePrices, today });
     const models = [];
     for (const m of all) {
       const f = flagMap.get(m.key);
@@ -167,6 +173,24 @@ class Catalog {
     this.byProduct = new Map();
     for (const m of models) for (const s of m.sizes) this.byProduct.set(s.id, { model: m, size: s });
     this.loadedAt = Date.now();
+  }
+
+  // Цены и скидки сайта из таблицы site_prices (её ведёт приложение «Склад», вкладка «Цены сайта»).
+  // Нет таблицы или прав - сайт работает на ценах склада, а причина видна в админке (this.sitePricesState).
+  async loadSitePrices() {
+    try {
+      const { rows } = await this.db.query(
+        `SELECT model_key, price::float8 AS price, sale_price::float8 AS sale_price,
+                to_char(sale_from, 'YYYY-MM-DD') AS sale_from, to_char(sale_to, 'YYYY-MM-DD') AS sale_to
+           FROM site_prices`);
+      this.sitePricesState = { status: 'ok', count: rows.length };
+      return new Map(rows.map((r) => [r.model_key, { price: r.price, salePrice: r.sale_price, from: r.sale_from || '', to: r.sale_to || '' }]));
+    } catch (e) {
+      const status = e.code === '42P01' ? 'missing' : e.code === '42501' ? 'denied' : 'error';
+      if (!this.sitePricesState || this.sitePricesState.status !== status) console.warn(`[prices] цены сайта недоступны (${status}): ${e.message}. Используются цены склада.`);
+      this.sitePricesState = { status, count: 0 };
+      return new Map();
+    }
   }
 
   // Поиск + отбор + сортировка + страница. Возвращает и счётчики для фильтров.
@@ -189,6 +213,7 @@ class Catalog {
     if (c.sort === 'price_asc') sorted.sort((a, b) => stockFirst(a, b) || a.price - b.price);
     else if (c.sort === 'price_desc') sorted.sort((a, b) => stockFirst(a, b) || b.price - a.price);
     else if (c.sort === 'new') sorted.sort((a, b) => stockFirst(a, b) || byNew(a, b));
+    else if (c.sort === 'discount') sorted.sort((a, b) => stockFirst(a, b) || b.discount - a.discount || a.price - b.price);
     else {
       sorted.sort((a, b) => stockFirst(a, b) || Number(b.featured) - Number(a.featured) ||
         ((scores.get(b) || 0) - (scores.get(a) || 0)) || b.qty - a.qty || byNew(a, b));
@@ -242,6 +267,10 @@ class Catalog {
       .map((x) => x[0]);
   }
 
+  onSale(n = 8) {
+    return this.models.filter((m) => m.inStock && m.oldPrice && m.cover).sort((a, b) => b.discount - a.discount || b.qty - a.qty).slice(0, n);
+  }
+
   newest(n = 8, filter = () => true) {
     return this.models.filter((m) => m.inStock && filter(m)).sort((a, b) => b.createdAt - a.createdAt).slice(0, n);
   }
@@ -254,6 +283,7 @@ class Catalog {
       models: visible.length,
       inStock: visible.filter((m) => m.inStock).length,
       hidden: (this.allModels || []).length - visible.length,
+      onSale: visible.filter((m) => m.inStock && m.oldPrice).length,
       brands: new Set(visible.map((m) => m.brand).filter(Boolean)).size,
     };
   }

@@ -23,6 +23,13 @@ test('пометки у размера: без коробки, ширина, о�
   assert.equal(splitSku('AB-1_40.5(D)').note, 'D');
 });
 
+test('хвост, похожий на размер только началом, размером не считается', () => {
+  assert.equal(splitSku('ABC_SALE').key, 'ABC_SALE');
+  assert.equal(splitSku('NIKE_SMALL').key, 'NIKE_SMALL');
+  assert.equal(splitSku('X_425').key, 'X_425');
+  assert.equal(splitSku('X_XL (б/к)').size, 'XL');
+});
+
 test('артикул без размера остаётся целиком', () => {
   assert.deepEqual(splitSku('ABC123'), { key: 'ABC123', size: '', note: '' });
   assert.equal(splitSku('ABC_xyz').key, 'ABC_xyz');

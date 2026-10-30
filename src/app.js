@@ -86,13 +86,15 @@ function createApp(cfg, db) {
       const baseUrl = cfg.publicUrl || `${req.protocol}://${req.get('host')}`;
       const deptCounts = {};
       for (const dd of Object.values(DEPARTMENTS)) deptCounts[dd.slug] = 0;
-      for (const m of catalog.models) if (m.inStock) deptCounts[DEPARTMENTS[m.dept].slug]++;
+      let saleCount = 0;
+      for (const m of catalog.models) if (m.inStock) { deptCounts[DEPARTMENTS[m.dept].slug]++; if (m.oldPrice) saleCount++; }
       const frees = d.methods.filter((m) => m.active && m.free_from !== null).map((m) => m.free_from);
       req.ctx = {
         settings: s,
         // Администратор может посмотреть другой сезон: /?preview_season=winter
         season: SEASONS[req.query.preview_season] && app.locals.adminPeek && app.locals.adminPeek(req) ? req.query.preview_season : currentSeason(s, new Date(), cfg.tz),
         deptCounts,
+        saleCount,
         dept: String(req.query.dept || ''),
         cartCount: Math.max(0, Math.min(99, parseInt(req.cookies[cartCountName], 10) || 0)),
         freeFrom: frees.length ? Math.min(...frees) : 0,

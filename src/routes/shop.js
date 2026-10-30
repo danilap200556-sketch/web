@@ -4,7 +4,7 @@ const { icon } = require('../icons');
 const { rub, plural, num } = require('../util');
 const { DEPARTMENTS } = require('../model');
 const { SEASONS, heroFor, seasonPicks } = require('../seasons');
-const { card, pagination, photoUrl, countLabel, SEASON_ICON } = require('../shopviews');
+const { card, pagination, photoUrl, countLabel, priceBlock, SEASON_ICON } = require('../shopviews');
 const { quote, PAY_METHODS } = require('../delivery');
 
 const SIZES_QUICK = ['36', '37', '38', '39', '40', '41', '42', '43', '44', '45', '46'];
@@ -28,6 +28,7 @@ module.exports = function mount(app, { catalog, tracker, cfg, media }, shopCtx, 
     for (const m of heroPool) if (heroModels.length < 3 && !heroModels.includes(m)) heroModels.push(m);
     const hero = heroFor(season, ctx.settings);
     const newest = catalog.newest(8, (m) => m.cover);
+    const onSale = catalog.onSale(8);
     const brands = [...catalog.models.filter((m) => m.inStock && m.brand).reduce((acc, m) => acc.set(m.brand, (acc.get(m.brand) || 0) + 1), new Map())]
       .sort((a, b) => b[1] - a[1]).slice(0, 10);
     const cat = (type, title, filter) => {
@@ -86,6 +87,13 @@ module.exports = function mount(app, { catalog, tracker, cfg, media }, shopCtx, 
           <a class="link" href="/catalog?sort=popular">Весь каталог ${icon('arrow-right')}</a>
         </div>
         <div class="grid grid--rail">${picks.map((m, i) => card(m, { priority: i < 4 }))}</div>
+      </div>
+    </section>` : ''}
+
+    ${onSale.length >= 4 ? html`<section class="block">
+      <div class="wrap">
+        <div class="block__head"><div><p class="eyebrow">${icon('tag')} Цены снижены</p><h2>Сейчас со скидкой</h2></div><a class="link" href="/catalog?sale=1&amp;sort=discount">Все скидки ${icon('arrow-right')}</a></div>
+        <div class="grid grid--rail">${onSale.map((m) => card(m))}</div>
       </div>
     </section>` : ''}
 
@@ -174,6 +182,7 @@ module.exports = function mount(app, { catalog, tracker, cfg, media }, shopCtx, 
   // ---------- Каталог ----------
   function titleFor(c) {
     if (c.q) return `Поиск: «${c.q}»`;
+    if (c.sale && !c.types.length && !c.brands.length && !c.dept) return 'Скидки';
     if (c.brands.length === 1 && !c.types.length) return c.brands[0];
     if (c.types.length === 1 && !c.brands.length) return c.types[0];
     if (c.brands.length === 1 && c.types.length === 1) return `${c.brands[0]}: ${c.types[0]}`;
@@ -219,10 +228,12 @@ module.exports = function mount(app, { catalog, tracker, cfg, media }, shopCtx, 
     c.sizes.forEach((s) => chip('Размер ' + s, 'size', s));
     if (c.min || c.max) chip(`${c.min ? 'от ' + rub(c.min) : ''} ${c.max ? 'до ' + rub(c.max) : ''}`.trim(), 'price');
     if (c.q) chip(`«${c.q}»`, 'q');
+    if (c.sale) chip('Со скидкой', 'sale');
     if (!c.inStock) chip('Включая отсутствующие', 'all');
     const h1 = titleFor(c);
     const hidden = (name, v) => (v ? html`<input type="hidden" name="${name}" value="${v}">` : '');
     const brandsShown = f.brands.slice(0, 40);
+    const st = catalog.stats();
     const body = html`
     <section class="wrap catalog">
       <nav class="crumbs" aria-label="Путь"><a href="/">Главная</a>${icon('chevron-right')}<span>${h1}</span></nav>
@@ -231,10 +242,10 @@ module.exports = function mount(app, { catalog, tracker, cfg, media }, shopCtx, 
         <div class="catalog__tools">
           <button class="btn btn--ghost btn--sm filters-open" type="button" data-filters-open>${icon('sliders')} Фильтры${chips.length ? html` <b class="dot">${chips.length}</b>` : ''}</button>
           <form method="get" action="/catalog" class="sort" data-autosubmit>
-            ${hidden('q', c.q)}${hidden('dept', c.dept)}${c.types.map((t) => hidden('type', t))}${c.brands.map((b) => hidden('brand', b))}${c.sizes.map((s) => hidden('size', s))}${hidden('min', c.min)}${hidden('max', c.max)}${!c.inStock ? hidden('all', '1') : ''}
+            ${hidden('q', c.q)}${hidden('dept', c.dept)}${c.types.map((t) => hidden('type', t))}${c.brands.map((b) => hidden('brand', b))}${c.sizes.map((s) => hidden('size', s))}${hidden('min', c.min)}${hidden('max', c.max)}${!c.inStock ? hidden('all', '1') : ''}${c.sale ? hidden('sale', '1') : ''}
             <label><span class="sort__t">Сортировка</span>
               <select name="sort" aria-label="Сортировка">
-                ${[['popular', 'Сначала популярные'], ['new', 'Новинки'], ['price_asc', 'Подешевле'], ['price_desc', 'Подороже']].map(([v, t]) => html`<option value="${v}" ${c.sort === v ? raw('selected') : ''}>${t}</option>`)}
+                ${[['popular', 'Сначала популярные'], ['new', 'Новинки'], ['discount', 'Больше скидка'], ['price_asc', 'Подешевле'], ['price_desc', 'Подороже']].map(([v, t]) => html`<option value="${v}" ${c.sort === v ? raw('selected') : ''}>${t}</option>`)}
               </select>
             </label>
           </form>
@@ -258,6 +269,7 @@ module.exports = function mount(app, { catalog, tracker, cfg, media }, shopCtx, 
                 <span>-</span>
                 <input type="number" inputmode="numeric" name="max" min="0" step="500" placeholder="до ${f.priceMax ? num(f.priceMax) : ''}" value="${c.max || ''}" aria-label="Цена до">
               </div></details>
+            ${st.onSale || c.sale ? html`<label class="check check--solo check--sale"><input type="checkbox" name="sale" value="1" ${c.sale ? raw('checked') : ''}><span>Только со скидкой</span></label>` : ''}
             <label class="check check--solo"><input type="checkbox" name="all" value="1" ${!c.inStock ? raw('checked') : ''}><span>Показывать и то, чего нет в наличии</span></label>
             <div class="filters__actions">
               <button class="btn btn--block" type="submit">Показать ${countLabel(r.total)}</button>
@@ -279,7 +291,7 @@ module.exports = function mount(app, { catalog, tracker, cfg, media }, shopCtx, 
     </section>`;
     send(req, res, {
       title: h1, body, bodyClass: 'page-catalog', canonical: c.q ? '' : '/catalog' + (qs({ dept: c.dept, type: c.types, brand: c.brands }) ? '?' + qs({ dept: c.dept, type: c.types, brand: c.brands }) : ''),
-      noindex: !!c.q || c.page > 1 || c.sizes.length > 0 || !!c.min || !!c.max, description: `${h1}: ${countLabel(r.total)} в магазине. Цены от ${rub(f.priceMin || 0)}, доставка по России и самовывоз.`,
+      noindex: !!c.q || c.page > 1 || c.sizes.length > 0 || !!c.min || !!c.max || c.sale, description: `${h1}: ${countLabel(r.total)} в магазине. Цены от ${rub(f.priceMin || 0)}, доставка по России и самовывоз.`,
     });
   });
 
@@ -304,7 +316,7 @@ module.exports = function mount(app, { catalog, tracker, cfg, media }, shopCtx, 
       '@context': 'https://schema.org', '@type': 'Product', name: m.title, brand: m.brand ? { '@type': 'Brand', name: m.brand } : undefined,
       sku: m.key, image: photos.map((id) => `${ctx.baseUrl}${photoUrl(id, 1280)}`),
       description: m.description || `${m.fullName}. Оригинал, доставка по России.`,
-      offers: { '@type': 'Offer', priceCurrency: 'RUB', price: String(m.price), availability: m.inStock ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock', url: `${ctx.baseUrl}/p/${m.slug}` },
+      offers: { '@type': 'Offer', priceCurrency: 'RUB', price: String(m.price), ...(m.oldPrice && m.saleTo ? { priceValidUntil: m.saleTo } : {}), availability: m.inStock ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock', url: `${ctx.baseUrl}/p/${m.slug}` },
     };
     const d = ctx.deliveryData;
     const minDelivery = d.methods.filter((x) => x.active).map((x) => ({ x, q: quote(x, m.price, false) })).sort((a, b) => a.q.price - b.q.price)[0];
@@ -322,8 +334,9 @@ module.exports = function mount(app, { catalog, tracker, cfg, media }, shopCtx, 
           <p class="buy__meta">${[m.brand, m.type].filter(Boolean).join(' · ')}</p>
           <h1 class="buy__title">${m.model || m.title}</h1>
           ${m.colorway ? html`<p class="buy__color">${m.colorway}</p>` : ''}
-          <p class="buy__price"><span class="price price--lg">${m.priceMax > m.price && !firstFree ? 'от ' : ''}${rub(firstFree ? firstFree.price : m.price)}</span>
+          <p class="buy__price">${m.oldPrice ? html`<span class="price price--lg price--sale">${rub(m.price)}</span><s class="price-old price-old--lg">${rub(m.oldPrice)}</s><span class="chip chip--sale">−${m.discount}%</span>` : html`<span class="price price--lg">${m.priceMax > m.price && !firstFree ? 'от ' : ''}${rub(firstFree ? firstFree.price : m.price)}</span>`}
             ${m.inStock ? html`<span class="stockline is-in">В наличии: ${availSizes.length} ${plural(availSizes.length, 'размер', 'размера', 'размеров')}</span>` : html`<span class="stockline">Нет в наличии</span>`}</p>
+          ${m.oldPrice && m.saleTo ? html`<p class="saleinfo">${icon('clock')} Скидка действует до ${m.saleTo.split('-').reverse().join('.')}</p>` : ''}
           <form class="buy__form" action="/cart/add" method="post" data-add-form>
             <input type="hidden" name="back" value="/p/${m.slug}">
             <div class="buy__sizes-head"><b>Размер${m.sizes.some((s) => s.size && !isNaN(parseFloat(s.size))) ? ' (EU)' : ''}</b><span class="muted" data-size-hint>Выберите размер</span></div>

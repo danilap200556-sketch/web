@@ -9,6 +9,14 @@ const { norm } = require('../catalog');
 const { pager } = require('./layout');
 
 const PAGE = 20;
+
+// Состояние чтения цен сайта: если таблицу не создало приложение или нет прав, сайт работает на ценах склада
+function priceNotice(catalog) {
+  const s = catalog.sitePricesState;
+  if (!s || s.status === 'ok') return s ? html`<p class="muted">Цены и скидки сайта (вкладка «Цены сайта» в приложении): задано для ${s.count} ${s.count % 10 === 1 && s.count % 100 !== 11 ? 'модели' : 'моделей'}; у остальных - цена склада.</p>` : '';
+  const why = { missing: 'в базе нет таблицы site_prices: запустите новую версию приложения «Склад» один раз', denied: 'у пользователя сайта нет права читать site_prices: выполните grants.sql', error: 'не удалось прочитать таблицу site_prices (см. журнал сайта)' }[s.status];
+  return html`<p class="hint">Цены сайта не подключены: ${why}. Пока на сайте цены склада.</p>`;
+}
 const REASON = { manual: 'Скрыта вручную', no_photo: 'Нет фото', no_price: 'Нет цены' };
 
 module.exports = function mount({ db, cfg, auth, render, router, catalog, settings }) {
@@ -61,6 +69,7 @@ module.exports = function mount({ db, cfg, auth, render, router, catalog, settin
 
       <section class="card card--pad">
         <header class="card__h"><div><h2>Модели на сайте</h2>
+          ${priceNotice(catalog)}
           <p class="muted">На сайте <b>${num(st.inStock)}</b> из ${num(st.models + st.hidden)} ${plural(st.models + st.hidden, 'модели', 'моделей', 'моделей')} в наличии. Скрыто: <b>${num(st.hidden)}</b>. Товары, цены и остатки приходят из приложения «Склад» сами; здесь только то, что относится к витрине.</p></div></header>
         <form class="filters" method="get" action="/admin/showcase">
           <label class="search"><input type="search" name="q" value="${q}" placeholder="Название, бренд или артикул">${icon('search')}</label>
@@ -73,7 +82,7 @@ module.exports = function mount({ db, cfg, auth, render, router, catalog, settin
             <input type="hidden" name="key" value="${m.key}"><input type="hidden" name="back" value="${back}">
             <span class="mrow__img">${m.cover ? html`<img src="${photoUrl(m.cover, 360)}" alt="" width="56" height="56" loading="lazy">` : html`<span class="toplist__ph"></span>`}</span>
             <div class="mrow__t"><b>${m.title}${m.colorway ? ' «' + m.colorway + '»' : ''}</b>
-              <small class="muted">${[m.type, 'арт. ' + m.key, rub(m.price), m.inStock ? m.qty + ' шт.' : 'нет в наличии'].filter(Boolean).join(' · ')}</small>
+              <small class="muted">${[m.type, 'арт. ' + m.key, m.oldPrice ? `${rub(m.price)} (было ${rub(m.oldPrice)}, −${m.discount}%)` : rub(m.price), m.priceSource === 'site' ? 'цена сайта' : 'цена склада', m.inStock ? m.qty + ' шт.' : 'нет в наличии'].filter(Boolean).join(' · ')}</small>
               ${m.hideReason ? html`<small class="why">${REASON[m.hideReason]}</small>` : ''}</div>
             <label class="check"><input type="checkbox" name="featured" ${m.featured ? 'checked' : ''}><span>Показывать первой</span></label>
             <label class="check"><input type="checkbox" name="hidden" ${m.hideReason === 'manual' ? 'checked' : ''}><span>Скрыть</span></label>

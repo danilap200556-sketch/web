@@ -347,6 +347,9 @@ a.stat:hover { border-color: var(--line-strong); color: inherit; }
   .texts__grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
+  /* таблицы прокручиваются вбок, а не сжимаются до нечитаемого */
+  .table th, .table td { white-space: nowrap; }
+  .prod b { white-space: normal; min-width: 180px; }
   .stats, .stats--4 { grid-template-columns: 1fr 1fr; }
   .stat__v--hero { font-size: 38px; }
   .grid4 { grid-template-columns: 1fr; }

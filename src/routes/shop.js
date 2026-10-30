@@ -232,8 +232,8 @@ module.exports = function mount(app, { catalog, tracker, cfg, media }, shopCtx, 
           <button class="btn btn--ghost btn--sm filters-open" type="button" data-filters-open>${icon('sliders')} Фильтры${chips.length ? html` <b class="dot">${chips.length}</b>` : ''}</button>
           <form method="get" action="/catalog" class="sort" data-autosubmit>
             ${hidden('q', c.q)}${hidden('dept', c.dept)}${c.types.map((t) => hidden('type', t))}${c.brands.map((b) => hidden('brand', b))}${c.sizes.map((s) => hidden('size', s))}${hidden('min', c.min)}${hidden('max', c.max)}${!c.inStock ? hidden('all', '1') : ''}
-            <label>Сортировка
-              <select name="sort">
+            <label><span class="sort__t">Сортировка</span>
+              <select name="sort" aria-label="Сортировка">
                 ${[['popular', 'Сначала популярные'], ['new', 'Новинки'], ['price_asc', 'Подешевле'], ['price_desc', 'Подороже']].map(([v, t]) => html`<option value="${v}" ${c.sort === v ? raw('selected') : ''}>${t}</option>`)}
               </select>
             </label>

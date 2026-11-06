@@ -43,7 +43,8 @@ module.exports = function mount(app, { cfg, db, catalog, carts, tracker, deliver
       const lines = priced.lines.filter((l) => !l.gone);
       const payChips = (await payments.methods()).filter((c) => PAY_METHODS[c].needsPrepay);
       const first = lines.find((l) => l.model);
-      const recs = (first ? catalog.related(first.model, 4) : catalog.newest(4, (m) => m.cover)).filter((m) => !lines.some((l) => l.model === m)).slice(0, 4);
+      const recs = [...(first ? catalog.related(first.model, 4) : []), ...catalog.newest(8, (m) => m.cover)]
+        .filter((m, i, a) => a.indexOf(m) === i && !lines.some((l) => l.model === m)).slice(0, 4);
       const body = html`
       <section class="wrap cartpage">
         <h1>Корзина ${lines.length ? html`<span class="muted">${priced.count} ${plural(priced.count, 'товар', 'товара', 'товаров')}</span>` : ''}</h1>

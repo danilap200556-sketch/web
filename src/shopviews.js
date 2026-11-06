@@ -126,7 +126,7 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
   </div>
   <header class="head" id="head">
     <div class="wrap head__in">
-      <button class="head__burger iconbtn" type="button" data-nav-toggle aria-label="Меню">${icon('sliders')}</button>
+      <button class="head__burger iconbtn" type="button" data-nav-toggle aria-label="Меню" aria-expanded="false" aria-controls="drawer">${icon('sliders')}</button>
       <a class="logo" href="/" aria-label="${s.shopName}">
         <svg class="logo__mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M3 21c0-2 1-3 3-3.4l4.6-.9c1.6-.3 2.7-1.3 3.4-2.8l1-2.1 4.2 2.2c1.6.8 3.2 1.4 4.8 1.8 2.5.6 4 1.6 4 3.7V24H3v-3Z"/><path class="logo__sole" d="M3 26h26"/></svg>
         <span class="logo__text">${s.shopName}</span>
@@ -153,6 +153,27 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
       </div>
     </div>
   </header>
+  <div class="drawer" id="drawer" aria-hidden="true">
+    <div class="drawer__scrim" data-drawer-close></div>
+    <aside class="drawer__panel" role="dialog" aria-modal="true" aria-label="Меню">
+      <div class="drawer__top">
+        <a class="logo" href="/" aria-label="${s.shopName}"><svg class="logo__mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M3 21c0-2 1-3 3-3.4l4.6-.9c1.6-.3 2.7-1.3 3.4-2.8l1-2.1 4.2 2.2c1.6.8 3.2 1.4 4.8 1.8 2.5.6 4 1.6 4 3.7V24H3v-3Z"/><path class="logo__sole" d="M3 26h26"/></svg><span class="logo__text">${s.shopName}</span></a>
+        <button class="iconbtn" type="button" data-drawer-close aria-label="Закрыть меню">${icon('close')}</button>
+      </div>
+      <nav class="drawer__nav" aria-label="Разделы">
+        ${navDepts(ctx)}
+        ${ctx.saleCount ? html`<a class="nav__link nav__link--hot" href="/catalog?sale=1&amp;sort=discount">Скидки</a>` : ''}
+        <a class="nav__link" href="/catalog?sort=new">Новинки</a>
+        <a class="nav__link" href="/delivery">Доставка и оплата</a>
+        <a class="nav__link" href="/cart">Корзина${ctx.cartCount ? html` <small class="drawer__badge">${ctx.cartCount}</small>` : ''}</a>
+      </nav>
+      <div class="drawer__foot">
+        ${s.phone ? html`<a class="drawer__phone" href="tel:${String(s.phone).replace(/[^+\d]/g, '')}">${s.phone}</a>` : ''}
+        ${s.hours ? html`<p>${s.hours}</p>` : ''}
+        ${s.address ? html`<p>${s.address}</p>` : ''}
+      </div>
+    </aside>
+  </div>
   <main id="main">${body}</main>
   <footer class="foot">
     <div class="wrap foot__grid">

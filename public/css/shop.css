@@ -474,9 +474,7 @@ select:focus, .field input:focus, .field textarea:focus { border-color: var(--in
 @media (max-width: 900px) {
   :root { --head-h: 60px; }
   .head__burger { display: inline-grid; }
-  .nav { position: fixed; inset: 0 30% 0 0; min-width: 260px; flex-direction: column; background: var(--surface); padding: 80px 20px 20px; gap: 4px; transform: translateX(-102%); transition: transform .3s cubic-bezier(.2, .8, .2, 1); z-index: 60; box-shadow: 20px 0 50px rgb(0 0 0 / .2); }
-  .nav.is-open { transform: none; }
-  .nav__link { font-size: 18px; padding: 14px 16px; border-radius: 14px; }
+  .head .nav { display: none; }
   .announce__sep { display: none; }
   .hero__in, .finder, .pdp__cols, .cartpage__cols, .orderpage__cols, .checkout__cols { grid-template-columns: minmax(0, 1fr); }
   .hero__stage { order: -1; aspect-ratio: 1 / .8; }
@@ -567,3 +565,23 @@ select:focus, .field input:focus, .field textarea:focus { border-color: var(--in
 .pvz__list { max-height: 300px; overflow: auto; border: 1px solid var(--line); border-radius: 12px; padding: 0 14px; background: var(--surface); }
 .pvz__list .hint { padding: 10px 0; margin: 0; }
 .hint--info { color: var(--ink-2); }
+
+/* Боковая панель (меню на телефоне): отдельный слой поверх страницы, не внутри шапки с размытием фона */
+.drawer { position: fixed; inset: 0; z-index: 100; visibility: hidden; pointer-events: none; transition: visibility 0s linear .35s; }
+.drawer.is-open { visibility: visible; pointer-events: auto; transition-delay: 0s; }
+.drawer__scrim { position: absolute; inset: 0; background: rgb(18 14 10 / .58); opacity: 0; transition: opacity .3s ease; -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+.drawer.is-open .drawer__scrim { opacity: 1; }
+.drawer__panel { position: absolute; top: 0; bottom: 0; left: 0; width: min(88vw, 380px); display: flex; flex-direction: column; gap: 8px; overflow-y: auto; overscroll-behavior: contain; background: var(--surface); padding: calc(14px + env(safe-area-inset-top)) 22px calc(22px + env(safe-area-inset-bottom)); box-shadow: 28px 0 70px rgb(0 0 0 / .32); transform: translateX(-104%); transition: transform .38s cubic-bezier(.2, .8, .2, 1); }
+.drawer.is-open .drawer__panel { transform: none; }
+.drawer__top { display: flex; align-items: center; justify-content: space-between; padding-bottom: 14px; margin-bottom: 6px; border-bottom: 1px solid var(--line); }
+.drawer__nav { display: flex; flex-direction: column; }
+.drawer__nav .nav__link { display: flex; justify-content: space-between; align-items: center; padding: 16px 2px; border-radius: 0; border-bottom: 1px solid var(--line); background: none; font-size: 22px; font-weight: 750; letter-spacing: -.02em; color: var(--ink); }
+.drawer__nav .nav__link:hover, .drawer__nav .nav__link:focus-visible { background: none; color: var(--accent); }
+.drawer__nav .nav__link--soon { opacity: .5; }
+.drawer__badge { background: var(--accent); color: #fff; font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; }
+.drawer__foot { margin-top: auto; padding-top: 22px; display: grid; gap: 6px; color: var(--muted); font-size: 14px; }
+.drawer__foot p { margin: 0; }
+.drawer__phone { font-size: 20px; font-weight: 750; color: var(--ink); }
+html.nav-open { overflow: hidden; }
+@media (min-width: 901px) { .drawer { display: none; } }
+@media (prefers-reduced-motion: reduce) { .drawer, .drawer__scrim, .drawer__panel { transition: none; } }

@@ -262,3 +262,12 @@ test('отделы «Обувь» и «Одежда» не пустые, даж�
   assert.match(clothes, /Tech Fleece Zip/, 'размеры M/L -> одежда');
   assert.doesNotMatch(clothes, /550 White Green/);
 });
+
+test('боковая панель меню вынесена из шапки с размытием фона (иначе «fixed» привязывается к шапке и панель прозрачная)', async () => {
+  const t = (await client(shop.base).get('/')).text;
+  const head = t.indexOf('</header>');
+  const drawer = t.indexOf('id="drawer"');
+  assert.ok(head > 0 && drawer > head, 'панель стоит после шапки, а не внутри неё');
+  assert.match(t, /data-drawer-close/);
+  assert.match(t.slice(drawer), /Доставка и оплата/);
+});

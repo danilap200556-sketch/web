@@ -9,11 +9,20 @@
   const ICON = (name) => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('class', 'ic'); const u = document.createElementNS('http://www.w3.org/2000/svg', 'use'); u.setAttribute('href', '#i-' + name); s.appendChild(u); return s; };
 
   /* ---------- Мобильное меню ---------- */
-  const nav = $('#nav');
+  const drawer = $('#drawer');
   const burger = $('[data-nav-toggle]');
-  if (nav && burger) {
-    burger.addEventListener('click', () => nav.classList.toggle('is-open'));
-    document.addEventListener('click', (e) => { if (nav.classList.contains('is-open') && !nav.contains(e.target) && !burger.contains(e.target)) nav.classList.remove('is-open'); });
+  if (drawer && burger) {
+    const setDrawer = (open) => {
+      drawer.classList.toggle('is-open', open);
+      drawer.setAttribute('aria-hidden', String(!open));
+      document.documentElement.classList.toggle('nav-open', open);
+      burger.setAttribute('aria-expanded', String(open));
+      if (open) { const c = $('.drawer__top .iconbtn', drawer); if (c) c.focus(); } else burger.focus({ preventScroll: true });
+    };
+    burger.addEventListener('click', () => setDrawer(!drawer.classList.contains('is-open')));
+    drawer.addEventListener('click', (e) => { if (e.target.closest('[data-drawer-close]') || e.target.closest('a')) setDrawer(false); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && drawer.classList.contains('is-open')) setDrawer(false); });
+    window.matchMedia('(min-width: 901px)').addEventListener('change', (e) => { if (e.matches) setDrawer(false); });
   }
 
   /* ---------- Подсказки поиска ---------- */

@@ -6,7 +6,7 @@ const { startShop, client, addProduct, adminLogin } = require('./helpers');
 const { fakeCdek } = require('./fake-cdek');
 
 const form = (co, extra = {}) => ({
-  idem: /name="idem" value="([^"]+)"/.exec(co)[1], name: 'Анна', phone: '89160000001', delivery: 'cdek', pay: 'online', consent: '1', ...extra,
+  idem: /name="idem" value="([^"]+)"/.exec(co)[1], name: 'Анна', phone: '89160000001', delivery: 'cdek', pay: 'sbp', consent: '1', ...extra,
 });
 
 test.describe('расчёт доставки по API СДЭК', () => {

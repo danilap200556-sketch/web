@@ -126,7 +126,7 @@ const methods = [
   { code: 'cdek', kind: 'tc', title: 'СДЭК', price: 390, door_extra: 250, free_from: 20000, cities: '', active: true },
 ];
 const points = [{ id: 7, title: 'Магазин', address: 'Москва, Примерная 1', active: true }];
-const base = { name: 'Анна', phone: '8 916 123-45-67', consent: '1', pay: 'online' };
+const base = { name: 'Анна', phone: '8 916 123-45-67', consent: '1', pay: 'sbp' };
 
 test('стоимость доставки: порог бесплатной и доплата до двери', () => {
   assert.deepEqual(quote(methods[1], 14999, true), { price: 490, free: false });
@@ -161,7 +161,7 @@ test('оформление: курьер только в своём городе
 });
 
 test('оформление: ТК - предоплата, до двери дороже, пункт выдачи обязателен', () => {
-  assert.throws(() => validateCheckout({ ...base, delivery: 'cdek', city: 'Казань', mode: 'point', tcpoint: 'ул. Ленина 1', pay: 'cod' }, methods, points, 10000), /онлайн-оплата/);
+  assert.throws(() => validateCheckout({ ...base, delivery: 'cdek', city: 'Казань', mode: 'point', tcpoint: 'ул. Ленина 1', pay: 'cod' }, methods, points, 10000), /предоплата/);
   assert.throws(() => validateCheckout({ ...base, delivery: 'cdek', city: 'Казань', mode: 'point', tcpoint: '' }, methods, points, 10000), /пункт выдачи/i);
   const door = validateCheckout({ ...base, delivery: 'cdek', city: 'Казань', mode: 'door', address: 'ул. Баумана, 10, кв. 5' }, methods, points, 10000);
   assert.equal(door.deliveryCost, 640);

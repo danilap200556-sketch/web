@@ -62,8 +62,15 @@ function createNotifier({ db, cfg, log = console }) {
     return lines.join('\n');
   }
 
+  async function paidText(orderId) {
+    const { rows } = await db.query('SELECT id, number, total, pay_method FROM webshop.orders WHERE id = $1', [orderId]);
+    const o = rows[0];
+    if (!o) return null;
+    return [`Оплачен заказ №${o.number} на ${rub(Number(o.total))}`, `Способ: ${(PAY_METHODS[o.pay_method] || {}).title || o.pay_method}`, 'Можно собирать и отправлять.', ...(siteUrl ? ['', `${siteUrl}/admin/orders/${o.id}`] : [])].join('\n');
+  }
+
   async function deliver(row) {
-    const text = await orderText(row.order_id);
+    const text = row.kind === 'order_paid' ? await paidText(row.order_id) : await orderText(row.order_id);
     if (text === null) { // заказа уже нет - слать нечего
       await db.query("UPDATE webshop.outbox SET sent_at = NOW(), error = 'заказ не найден' WHERE id = $1", [row.id]);
       return;
@@ -109,8 +116,8 @@ function createNotifier({ db, cfg, log = console }) {
     chatCount: () => chats.length,
 
     // В транзакции заказа: запись в очередь. Без настроенного Telegram ничего не пишет.
-    async enqueue(client, orderId) {
-      if (enabled()) await client.query("INSERT INTO webshop.outbox (kind, order_id) VALUES ('order_new', $1)", [orderId]);
+    async enqueue(client, orderId, kind = 'order_new') {
+      if (enabled()) await client.query('INSERT INTO webshop.outbox (kind, order_id) VALUES ($1, $2)', [kind, orderId]);
     },
     // После фиксации заказа: отправить сразу, не заставляя покупателя ждать
     kick() { if (enabled()) setImmediate(() => { run(); }); },

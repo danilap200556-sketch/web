@@ -155,6 +155,21 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS outbox_due_idx ON webshop.outbox (next_at) WHERE sent_at IS NULL`,
   // Данные расчёта доставки по API (перевозчик, код города и пункта выдачи, тариф, срок): пригодятся при оформлении отправки
   `ALTER TABLE webshop.orders ADD COLUMN IF NOT EXISTS delivery_meta JSONB`,
+  // Платежи через эквайринг (карта онлайн): одна запись на попытку оплаты, статус приходит уведомлением банка
+  `CREATE TABLE IF NOT EXISTS webshop.payments (
+     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+     order_id INTEGER NOT NULL,
+     provider TEXT NOT NULL,
+     provider_order_id TEXT NOT NULL,
+     provider_payment_id TEXT NOT NULL DEFAULT '',
+     amount NUMERIC(12,2) NOT NULL,
+     status TEXT NOT NULL DEFAULT 'new',
+     url TEXT NOT NULL DEFAULT '',
+     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+   )`,
+  `CREATE INDEX IF NOT EXISTS payments_order_idx ON webshop.payments (order_id)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS payments_provider_uq ON webshop.payments (provider, provider_payment_id) WHERE provider_payment_id <> ''`,
 ];
 
 module.exports = { SCHEMA };

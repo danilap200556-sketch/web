@@ -24,7 +24,7 @@ test.before(async () => {
   const html = (await c.get('/checkout')).text;
   const r = await c.post('/checkout', {
     idem: /name="idem" value="([^"]+)"/.exec(html)[1], name: 'Анна Петрова', phone: '89161234567', delivery: 'pickup',
-    point: /name="point" value="(\d+)"/.exec(html)[1], pay: 'online', consent: '1',
+    point: /name="point" value="(\d+)"/.exec(html)[1], pay: 'sbp', consent: '1',
   });
   orderNumber = /\/order\/(\d+)/.exec(r.location)[1];
   orderId = (await db.query('SELECT id FROM webshop.orders WHERE number = $1', [orderNumber])).rows[0].id;

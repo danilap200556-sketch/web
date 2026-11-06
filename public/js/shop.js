@@ -233,7 +233,7 @@
     const cityHint = $('[data-city-hint]', co);
     const payHint = $('[data-pay-hint]', co);
     const codRadio = $('input[name="pay"][value="cod"]', co);
-    const onlineRadio = $('input[name="pay"][value="online"]', co);
+    const prepayRadio = () => $('input[name="pay"]:not([value="cod"])', co);
     const norm = (s) => String(s || '').toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-я0-9]+/g, ' ').trim();
 
     // Расчёт по API перевозчика (СДЭК): город из списка, пункт выдачи из списка, цена и срок от сервера. При сбое API - прежняя форма.
@@ -296,9 +296,9 @@
       if (bad) cityHint.textContent = 'Этот способ работает только в: ' + m.cities + '. Выберите транспортную компанию для другого города.';
       // ТК - только предоплата
       const tc = m.kind === 'tc';
-      codRadio.disabled = tc;
+      if (codRadio) codRadio.disabled = tc;
       payHint.hidden = !tc;
-      if (tc && codRadio.checked) onlineRadio.checked = true;
+      if (tc && codRadio && codRadio.checked && prepayRadio()) prepayRadio().checked = true;
     }
 
     async function refreshQuote() {
@@ -411,6 +411,19 @@
       const b = $('[data-submit]', co); b.disabled = true; b.textContent = 'Оформляем…';
     });
   }
+
+  /* ---------- Копирование реквизитов ---------- */
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-copy]');
+    if (!b) return;
+    const v = b.dataset.copy;
+    try { await navigator.clipboard.writeText(v); } catch (err) {
+      const t = document.createElement('textarea'); t.value = v; t.style.position = 'fixed'; t.style.opacity = '0'; document.body.appendChild(t); t.select();
+      try { document.execCommand('copy'); } catch (e2) { /* не вышло */ } t.remove();
+    }
+    b.classList.add('is-done');
+    setTimeout(() => b.classList.remove('is-done'), 1400);
+  });
 
   /* ---------- Уведомление о cookie ---------- */
   const cookie = $('#cookie');

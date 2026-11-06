@@ -24,7 +24,8 @@ const newToken = () => crypto.randomBytes(18).toString('base64url');
 
 // Проверка формы оформления + расчёт. Возвращает данные заказа или бросает OrderError с текстом для покупателя.
 // ext - итог расчёта по API перевозчика (см. routes/cart.js): город, режим, цена, пункт выдачи; без него действуют фиксированные цены из админки.
-function validateCheckout(body, methods, points, subtotal, ext = null) {
+// payCodes - способы оплаты, доступные сейчас (payments.methods()); без него подойдёт любой из актуальных.
+function validateCheckout(body, methods, points, subtotal, ext = null, payCodes = null) {
   const name = str(body.name, 80);
   if (name.length < 2) throw new OrderError('Укажите, как к вам обращаться');
   const phone = normalizePhone(body.phone);
@@ -56,9 +57,10 @@ function validateCheckout(body, methods, points, subtotal, ext = null) {
       address = '';
     }
   }
-  const pay = PAY_METHODS[body.pay] ? body.pay : '';
+  const allowed = payCodes || Object.keys(PAY_METHODS).filter((k) => !PAY_METHODS[k].legacy);
+  const pay = allowed.includes(body.pay) ? body.pay : '';
   if (!pay) throw new OrderError('Выберите способ оплаты');
-  if (pay === 'cod' && m.kind === 'tc') throw new OrderError('Для доставки транспортной компанией нужна онлайн-оплата');
+  if (!PAY_METHODS[pay].needsPrepay && m.kind === 'tc') throw new OrderError('Для доставки транспортной компанией нужна предоплата: выберите СБП, карту или перевод');
   const q = ext ? { price: ext.price, free: ext.free } : quote(m, subtotal, door);
   return {
     name, phone, email, comment: str(body.comment, 500), city: m.kind === 'pickup' ? '' : city, address, point, door, pay,

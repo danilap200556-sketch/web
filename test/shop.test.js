@@ -99,7 +99,7 @@ test('оформление: ошибки показываются, заказ н
   const c = client(shop.base);
   await c.post('/cart/add', { pid: ids.hoodie });
   const before = await orderCount();
-  const r = await c.post('/checkout', { name: 'А', phone: '1', delivery: 'pickup', pay: 'online' });
+  const r = await c.post('/checkout', { name: 'А', phone: '1', delivery: 'pickup', pay: 'sbp' });
   assert.equal(r.status, 422);
   assert.match(r.text, /обращаться/);
   assert.equal(await orderCount(), before);

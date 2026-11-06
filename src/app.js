@@ -11,6 +11,7 @@ const { createTracker } = require('./track');
 const { createWriteoff } = require('./writeoff');
 const { createNotifier } = require('./notify');
 const { createCarriers } = require('./carriers');
+const { createPayments } = require('./payments');
 const { currentSeason, SEASONS } = require('./seasons');
 const { DEPARTMENTS } = require('./model');
 const { createMedia } = require('./media');
@@ -33,7 +34,8 @@ function createApp(cfg, db, opts = {}) {
   const writeoff = createWriteoff(db);
   const notifier = createNotifier({ db, cfg });
   const carriers = createCarriers(cfg, { fetchImpl: opts.fetchImpl });
-  const services = { cfg, db, settings, catalog, delivery, carts, tracker, media, writeoff, notifier, carriers };
+  const payments = createPayments({ db, cfg, settings, notifier, fetchImpl: opts.fetchImpl });
+  const services = { cfg, db, settings, catalog, delivery, carts, tracker, media, writeoff, notifier, carriers, payments };
   app.locals.services = services;
 
   // --- Заголовки безопасности. Скрипты и стили - только свои файлы (без inline).
@@ -121,6 +123,7 @@ function createApp(cfg, db, opts = {}) {
 
   require('./routes/shop')(app, services, shopCtx, send);
   require('./routes/cart')(app, services, shopCtx, send);
+  require('./routes/pay')(app, services);
   require('./admin/routes')(app, services);
 
   // 404 и ошибки: оформленные страницы витрины

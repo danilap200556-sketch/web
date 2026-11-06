@@ -8,7 +8,7 @@ const { ROLES } = require('./auth');
 const KIND = { pickup: 'Самовывоз', courier: 'Курьер', tc: 'Транспортная компания' };
 const money = (v) => { const n = parseFloat(String(v ?? '').replace(',', '.').replace(/\s/g, '')); return Number.isFinite(n) && n >= 0 ? Math.min(n, 1e7) : 0; };
 
-module.exports = function mount({ db, auth, render, fmt, router, settings, delivery, notifier, carriers, cfg }) {
+module.exports = function mount({ db, auth, render, fmt, router, settings, delivery, notifier, carriers, cfg, payments }) {
   // ---------- Доставка и оплата ----------
   router.get('/delivery', auth.require('delivery'), async (req, res, next) => {
     try {
@@ -211,6 +211,41 @@ module.exports = function mount({ db, auth, render, fmt, router, settings, deliv
     } catch (e) { next(e); }
   });
 
+  // ---------- Оплата: СБП, реквизиты, эквайринг ----------
+  async function payCard(req) {
+    const p = (await settings.get()).payment;
+    const r = p.requisites || {};
+    const methods = await payments.methods();
+    const chip = (ok, yes, no) => html`<span class="chip ${ok ? 'chip--green' : 'chip--gray'}">${ok ? yes : no}</span>`;
+    return html`<section class="card card--pad"><h2>Оплата</h2>
+      <p class="muted">Покупатель выбирает способ при оформлении заказа. СБП и перевод идут на счёт из реквизитов, поступление подтверждает менеджер («Оплачен» в карточке заказа). Карта подтверждается автоматически.</p>
+      <p>${chip(methods.includes('sbp'), 'СБП включён', 'СБП выключен')} ${chip(methods.includes('transfer'), 'Перевод по реквизитам включён', 'Перевод выключен')}
+        ${chip(payments.cardEnabled(), 'Карта онлайн подключена', 'Карта онлайн не подключена')}</p>
+      ${payments.cardEnabled() ? '' : html`<p class="muted">Чтобы принимать карты, подключите интернет-эквайринг в ТБанк Бизнес (деньги придут на расчётный счёт по договору) и впишите на сервере в <code>.env</code> ключи терминала
+        <code>TBANK_TERMINAL_KEY</code> и <code>TBANK_PASSWORD</code>, а также адрес сайта <code>PUBLIC_URL</code>. Пока карта не подключена, этого способа на оформлении нет. Подробности в README.</p>`}
+      <form method="post" action="/admin/settings/payment" class="mform__grid">${req.adminCsrf}
+        <label class="check field--wide"><input type="checkbox" name="sbpEnabled" ${p.sbpEnabled ? 'checked' : ''}><span>Принимать оплату по СБП (QR-код)</span></label>
+        <label class="field field--wide">Ссылка СБП (QR НСПК)<input name="sbpUrl" value="${p.sbpUrl}" maxlength="300" placeholder="https://qr.nspk.ru/..."></label>
+        <label class="check field--wide"><input type="checkbox" name="transferEnabled" ${p.transferEnabled ? 'checked' : ''}><span>Принимать перевод по реквизитам</span></label>
+        <label class="field field--wide">Получатель<input name="name" value="${r.name || ''}" maxlength="200"></label>
+        <label class="field">ИНН<input name="inn" value="${r.inn || ''}" inputmode="numeric" maxlength="12"></label>
+        <label class="field">Расчётный счёт<input name="account" value="${r.account || ''}" inputmode="numeric" maxlength="20"></label>
+        <label class="field">Банк<input name="bank" value="${r.bank || ''}" maxlength="120"></label>
+        <label class="field">БИК<input name="bik" value="${r.bik || ''}" inputmode="numeric" maxlength="9"></label>
+        <label class="field">Корр. счёт<input name="corr" value="${r.corr || ''}" inputmode="numeric" maxlength="20"></label>
+        <div class="mform__foot"><button class="btn btn--primary" type="submit">Сохранить оплату</button></div>
+      </form>
+    </section>`;
+  }
+  router.post('/settings/payment', auth.require('settings'), async (req, res, next) => {
+    try {
+      const v = payments.validatePayment(req.body);
+      if (v.error) res.flash('err', v.error);
+      else { await settings.set({ payment: v.value }); res.flash('ok', 'Настройки оплаты сохранены'); }
+      res.redirect('/admin/settings');
+    } catch (e) { next(e); }
+  });
+
   // ---------- Уведомления о заказах ----------
   async function notifyCard(req) {
     const st = await notifier.status();
@@ -257,6 +292,7 @@ module.exports = function mount({ db, auth, render, fmt, router, settings, deliv
       <section class="card card--pad"><h2>Откуда берутся товары</h2>
         <p>Модели, цены, фото и остатки сайт читает из общей базы приложения «Склад» (только чтение) и обновляет раз в полминуты. Размеры одной модели склеиваются по артикулу: <code>DD1391-100_42</code> - модель <code>DD1391-100</code>, размер 42. Заказы с сайта держат товар в резерве, пока их не отправили: после отправки списывайте его в приложении.</p>
         <p class="muted">Цены меняются в приложении. Здесь они не правятся.</p></section>
+      ${await payCard(req)}
       ${await notifyCard(req)}`;
       await render(req, res, 'settings', { title: 'Настройки', body });
     } catch (e) { next(e); }

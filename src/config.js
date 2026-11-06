@@ -56,6 +56,15 @@ function load(env = process.env) {
         height: intEnv(env.PARCEL_HEIGHT_CM, 14),
       },
     },
+    // Эквайринг ТБанк (карта онлайн): ключи терминала из личного кабинета. Деньги приходят на расчётный счёт по договору эквайринга.
+    // TBANK_TAXATION (например usn_income) включает чек в запросе платежа, если у терминала подключена облачная касса.
+    acquiring: {
+      terminalKey: (env.TBANK_TERMINAL_KEY || '').trim(),
+      password: (env.TBANK_PASSWORD || '').trim(),
+      apiUrl: (env.TBANK_API_URL || 'https://securepay.tinkoff.ru/v2').replace(/\/+$/, ''),
+      taxation: (env.TBANK_TAXATION || '').trim(),
+      tax: (env.TBANK_TAX || 'none').trim(),
+    },
     notify: {
       telegramToken: (env.TELEGRAM_BOT_TOKEN || '').trim(),
       telegramChatIds: (env.TELEGRAM_CHAT_ID || '').split(/[\s,;]+/).filter(Boolean),

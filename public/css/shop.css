@@ -585,3 +585,34 @@ select:focus, .field input:focus, .field textarea:focus { border-color: var(--in
 html.nav-open { overflow: hidden; }
 @media (min-width: 901px) { .drawer { display: none; } }
 @media (prefers-reduced-motion: reduce) { .drawer, .drawer__scrim, .drawer__panel { transition: none; } }
+
+/* Оплата на странице заказа: СБП, реквизиты, карта */
+.payboxes { display: grid; gap: 18px; margin: 0 0 30px; }
+.paybox { background: var(--surface); border: 1px solid var(--line); border-radius: 24px; padding: clamp(18px, 3vw, 30px); box-shadow: 0 22px 54px -36px rgb(0 0 0 / .4); }
+.paybox__h { display: flex; gap: 14px; align-items: center; margin-bottom: 18px; }
+.paybox__h h2 { margin: 0; font-size: 22px; letter-spacing: -.02em; }
+.paybox__h p { margin: 2px 0 0; }
+.paybox__ic { width: 46px; height: 46px; flex: none; border-radius: 14px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; }
+.paybox__ic .ic { width: 24px; height: 24px; }
+.paybox__sbp { display: grid; grid-template-columns: auto 1fr; gap: 30px; align-items: center; }
+.paybox__qr { width: 224px; height: 224px; background: #fff; border-radius: 18px; padding: 10px; border: 1px solid var(--line); }
+.paybox__qr svg { width: 100%; height: 100%; display: block; }
+.paybox__steps { margin: 0 0 20px; padding-left: 20px; color: var(--ink-2); display: grid; gap: 9px; }
+.paybox__note { color: var(--muted); font-size: 14px; margin: 18px 0 0; }
+.reqs { display: grid; margin: 0; }
+.reqs__row { display: grid; grid-template-columns: 170px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 11px 0; border-top: 1px solid var(--line); }
+.reqs__row:first-child { border-top: 0; }
+.reqs dt { color: var(--muted); font-size: 14px; }
+.reqs dd { margin: 0; font-weight: 650; word-break: break-word; font-variant-numeric: tabular-nums; }
+.copy { width: 38px; height: 38px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); display: grid; place-items: center; color: var(--ink-2); cursor: pointer; transition: background .2s, color .2s, border-color .2s, transform .15s; }
+.copy:hover { border-color: var(--ink-2); }
+.copy:active { transform: scale(.94); }
+.copy.is-done { background: var(--good); border-color: var(--good); color: #fff; }
+@media (max-width: 700px) {
+  .paybox__sbp { grid-template-columns: minmax(0, 1fr); justify-items: center; }
+  .paybox__qr { width: min(250px, 72vw); height: min(250px, 72vw); }
+  .paybox__how { width: 100%; }
+  .paybox__how .btn { width: 100%; justify-content: center; }
+  .reqs__row { grid-template-columns: minmax(0, 1fr) auto; }
+  .reqs dt { grid-column: 1 / -1; }
+}

@@ -10,7 +10,7 @@ const { quote, PAY_METHODS } = require('../delivery');
 const { OrderError, STATUSES, FLOW, validateCheckout, createOrder, getOrderByToken } = require('../orders');
 const { photoUrl } = require('../shopviews');
 
-module.exports = function mount(app, { cfg, db, catalog, carts, tracker, delivery, notifier, carriers }, shopCtx, send) {
+module.exports = function mount(app, { cfg, db, catalog, carts, tracker, delivery, notifier, carriers, payments }, shopCtx, send) {
   const { cartName, cartCountName, cookieOpts } = app.locals.cookies;
   const fmt = dateFmt(cfg.tz);
   const orderLimiter = new sec.RateLimiter(8, 10 * 60_000);
@@ -146,7 +146,8 @@ module.exports = function mount(app, { cfg, db, catalog, carts, tracker, deliver
     const points = d.points.filter((p) => p.active);
     if (!form.delivery && methods[0]) form.delivery = methods[0].code;
     if (!form.point && points[0]) form.point = String(points[0].id);
-    if (!form.pay) form.pay = 'online';
+    const payCodes = await payments.methods();
+    if (!payCodes.includes(form.pay)) form.pay = payCodes[0];
     const idem = sec.randomId(12);
     const sel = methods.find((m) => m.code === form.delivery) || methods[0];
     const selDoor = sel && (sel.kind === 'courier' || (sel.kind === 'tc' && form.mode === 'door'));
@@ -217,12 +218,12 @@ module.exports = function mount(app, { cfg, db, catalog, carts, tracker, deliver
           <fieldset class="step">
             <legend><span class="step__n">3</span> Оплата</legend>
             <div class="options options--2">
-              ${Object.entries(PAY_METHODS).map(([code, p]) => html`<label class="option" data-pay="${code}">
+              ${payCodes.map((code) => { const p = PAY_METHODS[code]; return html`<label class="option" data-pay="${code}" data-prepay="${p.needsPrepay ? 1 : 0}">
                 <input type="radio" name="pay" value="${code}" ${form.pay === code ? raw('checked') : ''}>
                 <span class="option__ic">${icon(p.icon)}</span>
-                <span class="option__t"><b>${p.title}</b><small>${p.hint}</small></span></label>`)}
+                <span class="option__t"><b>${p.title}</b><small>${p.hint}</small></span></label>`; })}
             </div>
-            <p class="hint" data-pay-hint hidden>Для доставки транспортной компанией нужна онлайн-оплата.</p>
+            <p class="hint" data-pay-hint hidden>Для доставки транспортной компанией нужна предоплата: СБП, карта или перевод.</p>
           </fieldset>
 
           <fieldset class="step">
@@ -383,7 +384,7 @@ module.exports = function mount(app, { cfg, db, catalog, carts, tracker, deliver
       let data;
       try {
         const ext = await carrierExt(d.methods.find((x) => x.code === form.delivery && x.active), form, lines, subtotal);
-        data = validateCheckout(form, d.methods, d.points, subtotal, ext);
+        data = validateCheckout(form, d.methods, d.points, subtotal, ext, await payments.methods());
       } catch (e) {
         if (!(e instanceof OrderError)) throw e;
         return renderCheckout(req, res, { form, error: e.message, status: 422 });
@@ -427,6 +428,7 @@ module.exports = function mount(app, { cfg, db, catalog, carts, tracker, deliver
         </div>
         ${closed ? html`<div class="alert alert--err">Статус: ${st.title}</div>` : html`<ol class="steps">${steps.map((s) => html`<li class="${s.done ? 'is-done' : ''}${s.now ? ' is-now' : ''}"><span>${s.done ? icon('check') : ''}</span>${s.title}</li>`)}</ol>`}
         ${o.track_number ? html`<p class="alert alert--ok">Трек-номер: <b>${o.track_number}</b></p>` : ''}
+        ${await payments.block(o, req.query)}
         <div class="orderpage__cols">
           <div class="cartlist">
             ${o.items.map((i) => html`<article class="cartline cartline--static">

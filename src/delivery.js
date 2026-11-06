@@ -4,9 +4,14 @@ const { norm } = require('./catalog');
 
 const TTL = 10_000;
 
+// Способы оплаты. Какие из них доступны покупателю, решает payments.methods(): карта - только при подключённом эквайринге.
+// online - прежний способ (менеджер присылал ссылку): остался для старых заказов, на оформлении не предлагается.
 const PAY_METHODS = {
-  online: { title: 'Онлайн: картой или по СБП', hint: 'Менеджер пришлёт ссылку на оплату после подтверждения заказа', icon: 'card', needsPrepay: true },
+  sbp: { title: 'СБП: по QR-коду', hint: 'В приложении любого банка за 10 секунд, без комиссии', icon: 'qr', needsPrepay: true },
+  card: { title: 'Банковской картой онлайн', hint: 'Visa, Mastercard, МИР на защищённой странице банка', icon: 'card', needsPrepay: true },
+  transfer: { title: 'Перевод по реквизитам', hint: 'Из приложения банка или по счёту, подойдёт для ИП и компаний', icon: 'bank', needsPrepay: true },
   cod: { title: 'При получении', hint: 'Наличными или картой при самовывозе и от курьера', icon: 'cash', needsPrepay: false },
+  online: { title: 'Онлайн (ссылка на оплату)', hint: 'Менеджер пришлёт ссылку на оплату после подтверждения заказа', icon: 'card', needsPrepay: true, legacy: true },
 };
 
 const DEFAULT_METHODS = [

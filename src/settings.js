@@ -16,6 +16,20 @@ function defaults(cfg) {
     electronicsTeaser: true,      // плашка «скоро электроника» на главной
     freeShippingNote: true,       // показывать порог бесплатной доставки в шапке
     notifyEmail: '',
+    // Оплата. Ссылка СБП (QR НСПК) и реквизиты правятся в админке («Настройки»). Нужны для QR-кода, перевода по реквизитам и платёжки.
+    payment: {
+      sbpEnabled: true,
+      sbpUrl: 'https://qr.nspk.ru/BS2A000N8IUJJRAH8FSP651VRVGNQ4G1',
+      transferEnabled: true,
+      requisites: {
+        name: 'ИНДИВИДУАЛЬНЫЙ ПРЕДПРИНИМАТЕЛЬ УСАТОВ ЕГОР НИКОЛАЕВИЧ',
+        inn: '616614137900',
+        account: '40802810500009344859',
+        bank: 'АО «ТБанк»',
+        bik: '044525974',
+        corr: '30101810145250000974',
+      },
+    },
   };
 }
 

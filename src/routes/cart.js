@@ -4,6 +4,7 @@ const { icon } = require('../icons');
 const { rub, plural, formatPhone, dateFmt, clampInt, str } = require('../util');
 const { norm } = require('../catalog');
 const { parcelOf, CarrierError } = require('../carriers');
+const { card } = require('../shopviews');
 const sec = require('../security');
 const cartLib = require('../cart');
 const { quote, PAY_METHODS } = require('../delivery');
@@ -40,6 +41,9 @@ module.exports = function mount(app, { cfg, db, catalog, carts, tracker, deliver
       const left = free ? Math.max(0, free - priced.subtotal) : 0;
       const pct = free ? Math.min(100, Math.round((priced.subtotal / free) * 100)) : 0;
       const lines = priced.lines.filter((l) => !l.gone);
+      const payChips = (await payments.methods()).filter((c) => PAY_METHODS[c].needsPrepay);
+      const first = lines.find((l) => l.model);
+      const recs = (first ? catalog.related(first.model, 4) : catalog.newest(4, (m) => m.cover)).filter((m) => !lines.some((l) => l.model === m)).slice(0, 4);
       const body = html`
       <section class="wrap cartpage">
         <h1>Корзина ${lines.length ? html`<span class="muted">${priced.count} ${plural(priced.count, 'товар', 'товара', 'товаров')}</span>` : ''}</h1>
@@ -72,13 +76,36 @@ module.exports = function mount(app, { cfg, db, catalog, carts, tracker, deliver
               <svg viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><rect class="freebar__bg" width="100" height="6" rx="3"/><rect class="freebar__fg" width="${pct}" height="6" rx="3"/></svg>
             </div>` : ''}
             <a class="btn btn--lg btn--block${priced.count ? '' : ' is-disabled'}" href="/checkout">Оформить заказ ${icon('arrow-right')}</a>
+            <ul class="paystrip" aria-label="Способы оплаты">${payChips.map((c) => html`<li>${PAY_METHODS[c].title.split(':')[0]}</li>`)}<li>При получении</li></ul>
             <a class="link link--center" href="/catalog">Продолжить покупки</a>
           </aside>
         </div>` : html`
         <div class="empty"><p class="eyebrow">Пока пусто</p><h2>В корзине ничего нет</h2><p>Выберите пару в каталоге: размер и цену подскажем на странице модели.</p>
           <p><a class="btn" href="/catalog">Перейти в каталог ${icon('arrow-right')}</a></p></div>`}
+        ${recs.length ? html`<section class="cartpage__recs" data-reveal>
+          <div class="block__head"><div><p class="eyebrow">Рекомендуем</p><h2>${lines.length ? 'С этим часто берут' : 'Что сейчас в тренде'}</h2></div></div>
+          <div class="grid">${recs.map((m) => card(m))}</div>
+        </section>` : ''}
       </section>`;
       send(req, res, { title: 'Корзина', body, bodyClass: 'page-cart', noindex: true });
+    } catch (e) { next(e); }
+  });
+
+  // Корзина для выезжающей панели: строки, суммы и прогресс до бесплатной доставки
+  app.get('/api/cart', shopCtx, async (req, res, next) => {
+    try {
+      res.set('Cache-Control', 'no-store');
+      const { priced } = await loadCart(req);
+      const lines = priced.lines.filter((l) => !l.gone).map((l) => ({
+        pid: l.pid, title: l.model.title, href: `/p/${l.model.slug}`,
+        meta: [l.size.size ? `Размер ${l.size.label}` : '', l.model.colorway].filter(Boolean).join(' · '),
+        qty: l.qty, max: l.max, price: l.price, sum: l.sum, img: l.model.cover ? photoUrl(l.model.cover, 360) : '', out: Boolean(l.out),
+      }));
+      const ft = req.ctx.freeFrom;
+      res.json({
+        count: priced.count, subtotal: priced.subtotal, lines,
+        free: ft ? { threshold: ft, left: Math.max(0, ft - priced.subtotal), pct: Math.min(100, Math.round((priced.subtotal / ft) * 100)) } : null,
+      });
     } catch (e) { next(e); }
   });
 

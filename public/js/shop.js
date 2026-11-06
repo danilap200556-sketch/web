@@ -157,6 +157,7 @@
         const data = await r.json();
         if (!data.ok) { const n = el('div'); n.appendChild(el('b', null, data.error || 'Не получилось добавить')); showToast(n, true); if (typeof data.count === 'number') setCount(data.count); return; }
         setCount(data.count);
+        if ($('#minicart')) { document.dispatchEvent(new CustomEvent('cart:changed', { detail: { open: true } })); return; }
         const n = el('div');
         const row = el('div', 'toast__row');
         const img = el('img'); img.alt = ''; if (data.item.img) img.src = data.item.img;

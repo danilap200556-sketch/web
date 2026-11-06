@@ -122,8 +122,10 @@ test.describe('электроника партнёра: каталог, зака
   });
 
   test('карточки догружаются порциями: описание, крупные фото, точная цена', async () => {
+    const pending = (await shop.db.query('SELECT COUNT(*)::int AS n FROM webshop.ext_products WHERE detail_at IS NULL')).rows[0].n; // часть карточек могла подгрузиться при просмотре товара
     const r = await shop.services.partner.syncDetails({ limit: 20 });
-    assert.equal(r.done, 6);
+    assert.equal(r.done, pending);
+    assert.ok(pending >= 4);
     const row = await byPath('product/apple-iphone-18-pro-256-black');
     assert.match(row.description, /Подробное описание/);
     assert.equal(row.images.length, 2);
@@ -149,6 +151,40 @@ test.describe('электроника партнёра: каталог, зака
     assert.equal((await fetch(`${shop.base}/media/x/${evil * 10}/360.jpg`)).status, 404, 'картинка с чужого домена не скачивается');
     assert.equal(fp.st.calls.length, before);
     await shop.db.query('DELETE FROM webshop.ext_products WHERE id = $1', [evil]);
+  });
+
+  test('фото: сначала пробуются крупные размеры, при их отсутствии берётся миниатюра; отсутствующие запоминаются', async () => {
+    const row = await byPath('product/apple-watch-s12');
+    await shop.db.query("UPDATE webshop.ext_products SET images = $2::jsonb WHERE id = $1", [row.id, JSON.stringify([`${fp.url}/image/cache/catalog/import/w/w_1-260x260.jpg`])]);
+    const p = shop.services.partner;
+    const reqs = (from) => fp.st.calls.slice(from).filter((u) => u.startsWith('/image/'));
+    let n = fp.st.calls.length;
+    assert.match((await p.fetchImage(row.id, 0)).url, /w_1-1000x1000\.jpg$/, 'есть крупный размер - берётся он');
+    assert.deepEqual(reqs(n), ['/image/cache/catalog/import/w/w_1-1000x1000.jpg']);
+    fp.st.missingSizes.add('1000x1000');
+    n = fp.st.calls.length;
+    assert.match((await p.fetchImage(row.id, 0)).url, /w_1-500x500\.jpg$/, '1000 нет - берётся 500');
+    fp.st.missingSizes.add('500x500');
+    n = fp.st.calls.length;
+    assert.match((await p.fetchImage(row.id, 0)).url, /w_1-260x260\.jpg$/, 'крупных нет - миниатюра');
+    n = fp.st.calls.length;
+    assert.match((await p.fetchImage(row.id, 0)).url, /260x260/);
+    assert.deepEqual(reqs(n), ['/image/cache/catalog/import/w/w_1-260x260.jpg'], 'отсутствующие размеры повторно не запрашиваются');
+    fp.st.missingSizes.clear();
+  });
+
+  test('просмотр товара запускает фоновую подгрузку его карточки (не чаще раза в 10 минут)', async () => {
+    const row = await byPath('product/garmin-fenix-9');
+    await shop.db.query('UPDATE webshop.ext_products SET detail_at = NULL, description = $2 WHERE id = $1', [row.id, '']);
+    const slug = /href="\/p\/(e\d+-garmin-fenix-9)"/.exec((await client(shop.base).get('/catalog?dept=elektronika&all=1')).text)[1];
+    const before = fp.st.calls.filter((u) => u === '/product/garmin-fenix-9').length;
+    assert.equal((await client(shop.base).get('/p/' + slug)).status, 200);
+    const done = await (async () => { for (let i = 0; i < 100; i++) { const r = await byPath('product/garmin-fenix-9'); if (r.detail_at) return r; await new Promise((x) => setTimeout(x, 20)); } return null; })();
+    assert.ok(done && /Подробное описание/.test(done.description), 'карточка подгрузилась в фоне');
+    assert.equal(fp.st.calls.filter((u) => u === '/product/garmin-fenix-9').length, before + 1);
+    await client(shop.base).get('/p/' + slug);
+    await new Promise((x) => setTimeout(x, 80));
+    assert.equal(fp.st.calls.filter((u) => u === '/product/garmin-fenix-9').length, before + 1, 'повторный просмотр лишних запросов к партнёру не делает');
   });
 
   async function buy(c, pids, { pay = 'sbp', phone = '89160000021' } = {}) {

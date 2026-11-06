@@ -134,7 +134,7 @@ function createPartner({ db, cfg, fetchImpl = fetch, sleep = sleepReal, log = co
   const source = 'sergeev';
   // Заголовки HTTP - только латиница: кириллица в User-Agent роняет запрос
   const ua = `SolehouseCatalogSync/1.0 (partner catalog sync for an online store${cfg.publicUrl ? '; ' + cfg.publicUrl : ''})`.replace(/[^\x20-\x7e]/g, '?');
-  const state = { running: '', timer: null, first: null, robots: null, robotsAt: 0, last: 0, slow: 0, verifyCache: new Map(), imgSem: 0 };
+  const state = { running: '', timer: null, first: null, missingSizes: new Set(), touched: new Map(), robots: null, robotsAt: 0, last: 0, slow: 0, verifyCache: new Map(), imgSem: 0 };
   const enabled = () => Boolean(c.enabled);
   const gapMs = () => Math.max(Number(c.delayMs ?? 3000), state.robots ? state.robots.delay * 1000 : 0) + state.slow;
 
@@ -267,6 +267,22 @@ function createPartner({ db, cfg, fetchImpl = fetch, sleep = sleepReal, log = co
     return { done };
   }
 
+  // Товар открыли на нашем сайте: в фоне подгружаем его карточку у партнёра (описание, крупные фото, цена), не чаще раза в 10 минут
+  async function refreshDetail(id) {
+    if (!enabled()) return;
+    const last = state.touched.get(id);
+    if (last && Date.now() - last < 600_000) return;
+    state.touched.set(id, Date.now());
+    if (state.touched.size > 2000) state.touched.delete(state.touched.keys().next().value);
+    const { rows } = await db.query('SELECT id, path, detail_at FROM webshop.ext_products WHERE id = $1', [id]);
+    const row = rows[0];
+    if (!row || (row.detail_at && Date.now() - new Date(row.detail_at).getTime() < DETAIL_EVERY_MS)) return;
+    try {
+      const d = parseProduct(await page(row.path), base);
+      if (d) await saveDetail(row, d);
+    } catch (e) { log.warn(`[partner] ${row.path}: ${e.message}`); }
+  }
+
   // Свежие цена и наличие товара перед оформлением заказа. null - узнать не удалось (сайт партнёра недоступен).
   async function verify(path) {
     const hit = state.verifyCache.get(path);
@@ -297,12 +313,24 @@ function createPartner({ db, cfg, fetchImpl = fetch, sleep = sleepReal, log = co
     if (u.origin !== new URL(base).origin) return null;
     while (state.imgSem >= 3) await sleepReal(40);
     state.imgSem++;
+    // В выдаче категории у товара только миниатюра 260 px: пробуем крупные размеры (их сайт создаёт при просмотре карточки),
+    // если такого файла нет - берём то, что есть. Отсутствующие размеры запоминаем, чтобы не спрашивать снова.
+    const m = /^(.*)-(\d+)x(\d+)(\.\w+)$/.exec(u.pathname);
+    const candidates = m && Number(m[2]) < 500 ? [1000, 500].map((w) => new URL(`${u.origin}${m[1]}-${w}x${w}${m[4]}`)) : [];
+    candidates.push(u);
     try {
-      const res = await fetchImpl(u, { headers: { 'user-agent': ua, accept: 'image/*' }, redirect: 'follow', signal: AbortSignal.timeout(15_000) });
-      if (!res.ok || !/^image\//.test(res.headers.get('content-type') || '')) return null;
-      const buf = Buffer.from(await res.arrayBuffer());
-      return buf.length && buf.length < 8 * 1024 * 1024 ? { buf, url } : null;
-    } catch { return null; } finally { state.imgSem--; }
+      for (const cand of candidates) {
+        const last = cand === u;
+        if (!last && state.missingSizes.has(cand.href)) continue;
+        try {
+          const res = await fetchImpl(cand, { headers: { 'user-agent': ua, accept: 'image/*' }, redirect: 'follow', signal: AbortSignal.timeout(15_000) });
+          if (!res.ok || !/^image\//.test(res.headers.get('content-type') || '')) { if (!last) { state.missingSizes.add(cand.href); if (state.missingSizes.size > 5000) state.missingSizes.clear(); } continue; }
+          const buf = Buffer.from(await res.arrayBuffer());
+          if (buf.length && buf.length < 8 * 1024 * 1024) return { buf, url: cand.href };
+        } catch { /* пробуем следующий размер */ }
+      }
+      return null;
+    } finally { state.imgSem--; }
   }
 
   async function rows() {
@@ -333,7 +361,7 @@ function createPartner({ db, cfg, fetchImpl = fetch, sleep = sleepReal, log = co
   }
 
   return {
-    enabled, rows, description, status, verify, fetchImage, syncListings, syncDetails, tick, base,
+    enabled, rows, description, status, verify, fetchImage, refreshDetail, syncListings, syncDetails, tick, base,
     syncNow() { if (enabled() && !state.running) { syncListings(); return true; } return false; },
     start({ intervalMs = 60_000, firstMs = 20_000 } = {}) {
       if (!enabled() || c.autostart === false || state.timer) return;

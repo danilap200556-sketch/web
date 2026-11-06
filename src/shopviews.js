@@ -114,10 +114,13 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="preload" href="/static/fonts/inter-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/static/css/shop.css?v=${ctx.assetV}">
+  <link rel="stylesheet" href="/static/css/design.css?v=${ctx.assetV}">
+  <script src="/static/js/boot.js?v=${ctx.assetV}"></script>
   ${jsonLd ? html`<script type="application/ld+json">${raw(JSON.stringify(jsonLd).replace(/</g, '\\u003c'))}</script>` : ''}
 </head>
 <body class="${bodyClass}">
   ${sprite()}
+  <div class="progress" data-progress aria-hidden="true"></div>
   <div class="announce">
     <div class="wrap announce__in">
       <span>${icon(SEASON_ICON[ctx.season])} ${season.title}: новая подборка уже на витрине</span>
@@ -175,6 +178,20 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
       </div>
     </aside>
   </div>
+  <div class="minicart" id="minicart" aria-hidden="true">
+    <div class="minicart__scrim" data-mini-close></div>
+    <aside class="minicart__panel" role="dialog" aria-modal="true" aria-label="Корзина">
+      <header class="minicart__head"><h2>Корзина <small data-mini-count></small></h2><button class="iconbtn" type="button" data-mini-close aria-label="Закрыть корзину">${icon('close')}</button></header>
+      <div class="minicart__free" data-mini-free hidden><p data-mini-free-text></p><div class="minicart__bar"><i data-mini-free-fill></i></div></div>
+      <div class="minicart__body" data-mini-body></div>
+      <footer class="minicart__foot" hidden>
+        <div class="minicart__sum"><span>Товары</span><b data-mini-sum></b></div>
+        <p class="minicart__note">Доставку и скидки посчитаем на следующем шаге</p>
+        <a class="btn btn--lg btn--block" href="/checkout">Оформить заказ ${icon('arrow-right')}</a>
+        <a class="link link--center" href="/cart">Открыть корзину</a>
+      </footer>
+    </aside>
+  </div>
   <main id="main">${body}</main>
   <footer class="foot">
     <div class="wrap foot__grid">
@@ -207,6 +224,7 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
         </ul>
       </div>
     </div>
+    <div class="foot__word" aria-hidden="true">${s.shopName}</div>
     <div class="wrap foot__bottom">
       <span>© ${new Date().getFullYear()} ${s.shopName}</span>
       <span>Цены и наличие обновляются автоматически из складской системы</span>
@@ -218,6 +236,7 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
   </div>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   <script src="/static/js/shop.js?v=${ctx.assetV}" defer></script>
+  <script src="/static/js/fx.js?v=${ctx.assetV}" defer></script>
 </body>
 </html>`;
 }

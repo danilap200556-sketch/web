@@ -44,10 +44,28 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner }, 
       Object.assign(cat('acc', 'Сумки и аксессуары', (m) => m.dept === 'accessories'), { href: '/catalog?dept=aksessuary' }),
     ].filter((t) => t.count > 0 && t.cover);
 
+    // Электроника партнёра: плитка категории, блок на главной
+    const elec = catalog.models.filter((m) => m.dept === 'electronics' && m.inStock && m.cover);
+    const elecPicks = [];
+    const seenBrand = new Set();
+    for (const m of elec.slice().sort((x, y) => Number(y.featured) - Number(x.featured) || y.price - x.price)) {
+      if (elecPicks.length >= 4) break;
+      if (seenBrand.has(m.brand)) continue;
+      seenBrand.add(m.brand); elecPicks.push(m);
+    }
+    for (const m of elec) if (elecPicks.length < 4 && !elecPicks.includes(m)) elecPicks.push(m);
+    const elecBrands = [...elec.reduce((acc, m) => (m.brand ? acc.set(m.brand, (acc.get(m.brand) || 0) + 1) : acc), new Map())].sort((x, y) => y[1] - x[1]).slice(0, 5).map(([b]) => b);
+    const inStockCount = catalog.models.filter((m) => m.inStock).length;
+    const marquee = [...new Set([...brands.map(([b]) => b), ...elecBrands])].slice(0, 16);
+    const SEASON_WORD = { winter: 'Winter', spring: 'Spring', summer: 'Summer', autumn: 'Autumn' };
+    const railHead = (eyebrow, title, link) => html`<div class="block__head"><div><p class="eyebrow">${eyebrow}</p><h2>${title}</h2></div>
+      <div class="rail__ctl">${link || ''}<div class="rail__nav"><button type="button" class="rail__btn" data-rail-prev aria-label="Назад">${icon('arrow-right')}</button><button type="button" class="rail__btn" data-rail-next aria-label="Вперёд">${icon('arrow-right')}</button></div></div></div>`;
+
     const body = html`
-    <section class="hero">
+    <section class="hero hero--v2">
+      <div class="hero__glow" aria-hidden="true"></div>
       <div class="wrap hero__in">
-        <div class="hero__copy">
+        <div class="hero__copy" data-reveal>
           <p class="chip chip--season">${icon(SEASON_ICON[season])} ${hero.eyebrow} ${new Date().getFullYear()}</p>
           <h1 class="hero__title">${hero.title}</h1>
           <p class="hero__text">${hero.text}</p>
@@ -60,44 +78,54 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner }, 
             <span>Часто ищут:</span>
             ${brands.slice(0, 4).map(([b]) => html`<a href="/catalog?brand=${encodeURIComponent(b)}">${b}</a>`)}
           </div>
+          <dl class="hero__stats">
+            <div><dt>${num(inStockCount)}</dt><dd>моделей в наличии</dd></div>
+            <div><dt>7 дней</dt><dd>на обмен и возврат</dd></div>
+            <div><dt>СБП</dt><dd>карта и перевод</dd></div>
+          </dl>
         </div>
-        <div class="hero__stage" aria-hidden="${heroModels.length ? 'false' : 'true'}">
+        <div class="hero__stage" aria-hidden="${heroModels.length ? 'false' : 'true'}" data-reveal="scale">
           <div class="stage__bg"></div>
-          ${heroModels.map((m, i) => html`<a class="stage__item stage__item--${i + 1}" href="/p/${m.slug}" tabindex="${i ? '0' : '0'}">
+          <span class="stage__word" aria-hidden="true" data-parallax="-0.06">${SEASON_WORD[season]}</span>
+          ${heroModels.map((m, i) => html`<a class="stage__item stage__item--${i + 1}" href="/p/${m.slug}" tabindex="0" data-parallax="${[-0.05, 0.09, -0.12][i]}">
             <img src="${photoUrl(m.cover, 640)}" alt="${m.title}" width="640" height="640" ${i === 0 ? raw('fetchpriority="high"') : raw('loading="lazy"')}>
             <span class="stage__tag"><b>${m.brand} ${m.model}</b><i>${rub(m.price)}</i></span>
           </a>`)}
+          <span class="stage__chip stage__chip--a">${icon('shield')} Оригинал</span>
+          <span class="stage__chip stage__chip--b">${icon('store')} Примерка при самовывозе</span>
         </div>
       </div>
+      <a class="hero__scroll" href="#picks" aria-label="К подборке сезона"><span></span></a>
     </section>
+
+    ${marquee.length ? html`<div class="marquee" aria-label="Бренды">
+      <div class="marquee__track">${[0, 1].map((k) => html`<ul class="marquee__list" ${k ? raw('aria-hidden="true"') : ''}>${marquee.map((b) => html`<li><a href="/catalog?brand=${encodeURIComponent(b)}" ${k ? raw('tabindex="-1"') : ''}>${b}</a></li>`)}</ul>`)}</div>
+    </div>` : ''}
 
     <section class="usp">
       <div class="wrap usp__grid">
-        <div class="usp__item">${icon('truck')}<div><b>Доставка по России</b><span>СДЭК, Boxberry, Почта, курьер</span></div></div>
-        <div class="usp__item">${icon('store')}<div><b>Самовывоз с примеркой</b><span>Заберите сегодня</span></div></div>
-        <div class="usp__item">${icon('shield')}<div><b>Только оригинал</b><span>Проверяем каждую пару</span></div></div>
-        <div class="usp__item">${icon('return')}<div><b>Обмен и возврат</b><span>7 дней на решение</span></div></div>
+        <div class="usp__item" data-reveal>${icon('truck')}<div><b>Доставка по России</b><span>СДЭК, Boxberry, Почта, курьер</span></div></div>
+        <div class="usp__item" data-reveal>${icon('store')}<div><b>Самовывоз с примеркой</b><span>Заберите сегодня</span></div></div>
+        <div class="usp__item" data-reveal>${icon('shield')}<div><b>Только оригинал</b><span>Проверяем каждую пару</span></div></div>
+        <div class="usp__item" data-reveal>${icon('return')}<div><b>Обмен и возврат</b><span>7 дней на решение</span></div></div>
       </div>
     </section>
 
-    ${picks.length ? html`<section class="block">
-      <div class="wrap">
-        <div class="block__head">
-          <div><p class="eyebrow">${icon(SEASON_ICON[season])} Выбор сезона</p><h2>${SEASONS[season].title}: что носим сейчас</h2></div>
-          <a class="link" href="/catalog?sort=popular">Весь каталог ${icon('arrow-right')}</a>
-        </div>
-        <div class="grid grid--rail">${picks.map((m, i) => card(m, { priority: i < 4 }))}</div>
+    ${picks.length ? html`<section class="block" id="picks">
+      <div class="wrap" data-rail data-reveal>
+        ${railHead(html`${icon(SEASON_ICON[season])} Выбор сезона`, `${SEASONS[season].title}: что носим сейчас`, html`<a class="link rail__all" href="/catalog?sort=popular">Весь каталог ${icon('arrow-right')}</a>`)}
+        <div class="rail__track">${picks.map((m, i) => card(m, { priority: i < 4 }))}</div>
       </div>
     </section>` : ''}
 
     ${onSale.length >= 4 ? html`<section class="block">
-      <div class="wrap">
-        <div class="block__head"><div><p class="eyebrow">${icon('tag')} Цены снижены</p><h2>Сейчас со скидкой</h2></div><a class="link" href="/catalog?sale=1&amp;sort=discount">Все скидки ${icon('arrow-right')}</a></div>
-        <div class="grid grid--rail">${onSale.map((m) => card(m))}</div>
+      <div class="wrap" data-rail data-reveal>
+        ${railHead(html`${icon('tag')} Цены снижены`, 'Сейчас со скидкой', html`<a class="link rail__all" href="/catalog?sale=1&amp;sort=discount">Все скидки ${icon('arrow-right')}</a>`)}
+        <div class="rail__track">${onSale.map((m) => card(m))}</div>
       </div>
     </section>` : ''}
 
-    <section class="block block--finder">
+    <section class="block block--finder" data-reveal>
       <div class="wrap">
         <div class="finder" data-finder>
           <div class="finder__copy">
@@ -138,11 +166,12 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner }, 
       </div>
     </section>
 
+
     ${tiles.length ? html`<section class="block">
       <div class="wrap">
-        <div class="block__head"><div><p class="eyebrow">Категории</p><h2>Что вы ищете</h2></div></div>
+        <div class="block__head" data-reveal><div><p class="eyebrow">Категории</p><h2>Что вы ищете</h2></div></div>
         <div class="tiles">
-          ${tiles.map((t, i) => html`<a class="tile tile--${i + 1}" href="${t.href}">
+          ${tiles.map((t, i) => html`<a class="tile tile--${i + 1}${t.dark ? ' tile--dark' : ''}" href="${t.href}" data-reveal>
             <img src="${photoUrl(t.cover, 640)}" alt="" width="640" height="640" loading="lazy">
             <span class="tile__t"><b>${t.title}</b><i>${t.count} ${plural(t.count, 'модель', 'модели', 'моделей')}</i></span>
             <span class="tile__go">${icon('arrow-up-right')}</span>
@@ -151,18 +180,29 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner }, 
       </div>
     </section>` : ''}
 
-    ${brands.length ? html`<section class="block block--tight">
-      <div class="wrap">
-        <div class="brands">
-          ${brands.map(([b, n]) => html`<a class="brands__item" href="/catalog?brand=${encodeURIComponent(b)}"><b>${b}</b><span>${n}</span></a>`)}
+    ${elecPicks.length ? html`<section class="block">
+      <div class="wrap" data-reveal>
+        <div class="promo">
+          <div class="promo__copy">
+            <p class="eyebrow">${icon('chip')} Новый раздел</p>
+            <h2>Электроника</h2>
+            <p>${elecBrands.join(', ')} и другие бренды. Цены и наличие обновляются каждые несколько часов, заказ можно оплатить по СБП.</p>
+            <a class="btn btn--light btn--lg" href="/catalog?dept=elektronika">Смотреть всё ${icon('arrow-right')}</a>
+          </div>
+          <div class="promo__grid">
+            ${elecPicks.map((m) => html`<a class="promo__item" href="/p/${m.slug}">
+              <span class="promo__img"><img src="${photoUrl(m.cover, 360)}" alt="${m.title}" width="360" height="360" loading="lazy"></span>
+              <small>${m.brand}</small><b>${m.model}</b><span class="promo__price">${rub(m.price)}</span>
+            </a>`)}
+          </div>
         </div>
       </div>
     </section>` : ''}
 
     ${newest.length ? html`<section class="block">
-      <div class="wrap">
-        <div class="block__head"><div><p class="eyebrow">Только что поступили</p><h2>Новинки</h2></div><a class="link" href="/catalog?sort=new">Все новинки ${icon('arrow-right')}</a></div>
-        <div class="grid">${newest.map((m) => card(m))}</div>
+      <div class="wrap" data-rail data-reveal>
+        ${railHead('Только что поступили', 'Новинки', html`<a class="link rail__all" href="/catalog?sort=new">Все новинки ${icon('arrow-right')}</a>`)}
+        <div class="rail__track">${newest.map((m) => card(m))}</div>
       </div>
     </section>` : ''}
 
@@ -315,6 +355,7 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner }, 
     const photos = m.photos.slice(0, 8);
     const isExt = Boolean(m.ext); // электроника партнёра: один вариант без размеров
     const descr = isExt ? await partner.description(m.ext.id) : m.description;
+    if (isExt) partner.refreshDetail(m.ext.id).catch(() => {}); // карточка у партнёра подгружается в фоне: фото станут чётче
     const jsonLd = {
       '@context': 'https://schema.org', '@type': 'Product', name: m.title, brand: m.brand ? { '@type': 'Brand', name: m.brand } : undefined,
       sku: m.key, image: photos.map((id) => `${ctx.baseUrl}${photoUrl(id, 1280)}`),

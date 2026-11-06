@@ -23,7 +23,7 @@ async function fakePartner(site = {}) {
       ],
       ...site.sections,
     },
-    perPage: 2,
+    perPage: 2, missingSizes: new Set(),
   };
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://x');
@@ -33,7 +33,10 @@ async function fakePartner(site = {}) {
     const left = st.failPaths.get(url.pathname + url.search);
     if (left > 0) { st.failPaths.set(url.pathname + url.search, left - 1); return send(500, 'error'); }
     if (url.pathname === '/robots.txt') return send(200, st.robots, 'text/plain');
-    if (url.pathname.startsWith('/image/')) { res.writeHead(200, { 'content-type': 'image/jpeg' }); return res.end(jpeg); }
+    if (url.pathname.startsWith('/image/')) {
+      if ([...(st.missingSizes || [])].some((x) => url.pathname.includes(x))) return send(404, 'нет такого размера');
+      res.writeHead(200, { 'content-type': 'image/jpeg' }); return res.end(jpeg);
+    }
     const name = url.pathname.replace(/^\/+/, '');
     if (st.sections[name]) {
       const all = st.sections[name];

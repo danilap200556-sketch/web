@@ -17,7 +17,7 @@ function priceNotice(catalog) {
   const why = { missing: 'в базе нет таблицы site_prices: запустите новую версию приложения «Склад» один раз', denied: 'у пользователя сайта нет права читать site_prices: выполните grants.sql', error: 'не удалось прочитать таблицу site_prices (см. журнал сайта)' }[s.status];
   return html`<p class="hint">Цены сайта не подключены: ${why}. Пока на сайте цены склада.</p>`;
 }
-const REASON = { manual: 'Скрыта вручную', no_photo: 'Нет фото', no_price: 'Нет цены' };
+const REASON = { manual: 'Скрыта вручную', no_photo: 'Нет фото', no_price: 'Нет цены', note_only: 'Только размеры с пометками (без коробки, один кроссовок...)' };
 
 module.exports = function mount({ db, cfg, auth, render, router, catalog, settings }) {
   router.get('/showcase', auth.require('showcase'), async (req, res, next) => {
@@ -61,6 +61,7 @@ module.exports = function mount({ db, cfg, auth, render, router, catalog, settin
                 <label class="field">Заголовок<input name="title_${k}" value="${ov.title || ''}" placeholder="${SEASONS[k].hero.title}" maxlength="90"></label>
                 <label class="field">Описание<textarea name="text_${k}" rows="3" placeholder="${SEASONS[k].hero.text}" maxlength="260">${ov.text || ''}</textarea></label>
                 <small class="muted">Пусто - стандартный текст</small></fieldset>`; })}</div></details>
+          <label class="check"><input type="checkbox" name="showNoteSizes" ${s.showNoteSizes ? 'checked' : ''}><span>Продавать размеры с пометками в артикуле как обычные <small class="muted">(например <code>_42(б/к)</code>, <code>_43 (1 кроссовок)</code>, ширина <code>(2E)</code>, <code>(Брак)</code>. Покупатель увидит только размер без слов, поэтому по умолчанию такие варианты не продаются: иначе под размером «42» можно получить один кроссовок или пару с браком. Ширина «D» считается обычной)</small></span></label>
           <label class="check"><input type="checkbox" name="requirePhoto" ${s.requirePhoto ? 'checked' : ''}><span>Показывать только модели с фото <small class="muted">(фото подбираются в приложении «Склад»)</small></span></label>
           <label class="check"><input type="checkbox" name="electronicsTeaser" ${s.electronicsTeaser ? 'checked' : ''}><span>Плашка «Скоро электроника» на главной <small class="muted">(пропадёт сама, когда в базе появится электроника)</small></span></label>
           <button class="btn btn--primary" type="submit">Сохранить</button>
@@ -104,7 +105,7 @@ module.exports = function mount({ db, cfg, auth, render, router, catalog, settin
         const o = { eyebrow: str(req.body[`eyebrow_${k}`], 40), title: str(req.body[`title_${k}`], 90), text: str(req.body[`text_${k}`], 260) };
         if (o.eyebrow || o.title || o.text) overrides[k] = o;
       }
-      await settings.set({ seasonMode: mode, heroOverrides: overrides, requirePhoto: req.body.requirePhoto === 'on', electronicsTeaser: req.body.electronicsTeaser === 'on' });
+      await settings.set({ seasonMode: mode, heroOverrides: overrides, requirePhoto: req.body.requirePhoto === 'on', showNoteSizes: req.body.showNoteSizes === 'on', electronicsTeaser: req.body.electronicsTeaser === 'on' });
       catalog.invalidate();
       res.flash('ok', 'Витрина обновлена');
       res.redirect('/admin/showcase');

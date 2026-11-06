@@ -99,6 +99,34 @@ test('отдел модели учитывает категорию Маркет
   assert.deepEqual(byKey, { 'NB550-WG': 'shoes', 'TF-1': 'clothes', 'DUNK-1': 'shoes' });
 });
 
+test('двойной размер одежды L/XL и M/L - это размер, а не пометка', () => {
+  assert.deepEqual(splitSku('DC9165-328_L/XL'), { key: 'DC9165-328', size: 'L/XL', note: '' });
+  assert.deepEqual(splitSku('FB5375-716_M/L'), { key: 'FB5375-716', size: 'M/L', note: '' });
+  assert.equal(splitSku('AB-1_42(б/к)').size, '42', 'а «б/к» по-прежнему пометка');
+});
+
+test('на витрине размер - только цифра или буква: варианты с пометками не продаются, ширина D обычная', () => {
+  const name = 'Кроссовки Nike Dunk Low «Panda»';
+  const row = (id, sku, qty, price = 10000) => ({ id, sku, name, price, vendor: '', created_at: '2026-10-01', qty, photos: [1] });
+  const rows = [row(1, 'DD1-100_41', 2), row(2, 'DD1-100_42', 1), row(3, 'DD1-100_42(б/к)', 3, 8000), row(4, 'DD1-100_43(1 кроссовок)', 1),
+    row(5, 'DD1-100_44(D)', 2), row(6, 'DD1-100_45(Брак)', 1), row(7, 'DD1-100_46(2E)', 1)];
+  const m = buildModels(rows)[0];
+  assert.deepEqual(m.sizes.map((x) => x.label), ['41', '42', '44'], 'остались только обычные размеры, подписи без слов');
+  assert.ok(m.sizes.every((x) => /^[\dA-Z./]+$/.test(x.label)), 'в подписях нет слов');
+  assert.equal(m.sizes.find((x) => x.size === '42').id, 2, 'при пересечении берётся вариант без пометки');
+  assert.equal(m.sizes.find((x) => x.size === '44').id, 5, 'D - обычная ширина');
+  assert.equal(m.price, 10000, 'цена «без коробки» не занижает цену модели');
+  // с включённой настройкой варианты с пометками тоже продаются, но подпись остаётся без слов
+  const all = buildModels(rows, { showNoteSizes: true })[0];
+  assert.deepEqual(all.sizes.map((x) => x.label), ['41', '42', '43', '44', '45', '46']);
+  assert.equal(all.sizes.find((x) => x.size === '42').id, 2, 'и тут обычный вариант главнее');
+  // только варианты с пометками: модель есть, размеров нет
+  const only = buildModels([row(9, 'ZZ-1_42(б/к)', 1)])[0];
+  assert.deepEqual(only.sizes, []);
+  assert.equal(only.noteOnly, true);
+  assert.equal(buildModels([row(9, 'ZZ-1_42(б/к)', 1)], { showNoteSizes: true })[0].noteOnly, false);
+});
+
 test('размеры одной модели склеиваются; резерв вычитается из наличия', () => {
   const rows = [
     { id: 1, sku: 'DD1-100_41', name: 'Кроссовки Nike Dunk Low «Panda»', price: 11990, vendor: '', created_at: '2026-10-01', qty: 2, photos: [] },

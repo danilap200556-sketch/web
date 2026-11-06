@@ -59,7 +59,9 @@ function splitSku(sku) {
   if (!m) return { key: s, size: '', note: '' };
   let size = m[1].replace(',', '.').toUpperCase();
   if (/^ONE\s*SIZE$|^OS$|^UNI$/.test(size)) size = 'ONE SIZE';
-  const rest = m[2].trim();
+  let rest = m[2].trim();
+  const combo = /^\/\s*([A-Za-z0-9]{1,4})$/.exec(rest); // L/XL, M/L: двойной размер одежды
+  if (combo) { size = `${size}/${combo[1].toUpperCase()}`; rest = ''; }
   let note = '';
   if (rest) {
     if (/б\s*\/\s*к/i.test(rest)) note = 'без коробки';
@@ -178,6 +180,11 @@ function sitePrice(sp, today) {
 // Из строк товаров склада (все размеры) собирает модели.
 // rows: { id, sku, name, description, price, vendor, category, created_at, qty, photos: [photoId...] }
 // opts.sitePrices: Map(ключ модели -> { price, salePrice, from, to }), opts.today: 'YYYY-MM-DD'
+// Пометки у размера (без коробки, один кроссовок, ширина 2E, брак...) покупателю не показываются: размер - только цифра или буква.
+// Поэтому такие варианты на витрину не выходят (иначе под размером «42» можно купить один кроссовок или пару с браком).
+// Ширина «D» - обычная, это не пометка. opts.showNoteSizes - показывать и варианты с пометками, но тоже без слов.
+const plainNote = (n) => !n || /^d$/i.test(String(n).trim());
+
 function buildModels(rows, opts = {}) {
   const reserved = opts.reserved || new Map(); // product_id -> зарезервировано
   const sitePrices = opts.sitePrices || new Map();
@@ -195,10 +202,19 @@ function buildModels(rows, opts = {}) {
     if (!named) continue; // у товара нет названия (в названии стоит артикул) - на витрину не выводим
     const p = parseName(named.name, named.vendor);
     const dept = deptOfModel({ type: p.type, brand: p.brand, name: named.name, category: named.category, sizes: items.map((i) => i.size).filter(Boolean) });
-    const sizes = items
+    // Один вариант на размер: без пометки лучше, затем тот, где есть остаток
+    const pick = new Map();
+    for (const i of items) {
+      if (!plainNote(i.note) && !opts.showNoteSizes) continue;
+      const score = (plainNote(i.note) ? 2 : 0) + ((i.qty || 0) > 0 ? 1 : 0);
+      const cur = pick.get(i.size);
+      if (!cur || score > cur.score) pick.set(i.size, { i, score });
+    }
+    const shown = [...pick.values()].map((x) => x.i);
+    const sizes = shown
       .map((i) => {
         const avail = Math.max(0, (i.qty || 0) - (reserved.get(i.id) || 0));
-        const label = i.size ? (i.note ? `${i.size} · ${i.note}` : i.size) : 'Один размер';
+        const label = i.size || 'Один размер';
         return { id: i.id, sku: i.sku, size: i.size, note: i.note, label, qty: avail, price: Number(i.price) || 0, order: sizeOrder(i.size) };
       })
       .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label, 'ru'));
@@ -227,6 +243,7 @@ function buildModels(rows, opts = {}) {
       description: desc.trim(),
       dept,
       sizes,
+      noteOnly: !shown.length, // есть только варианты с пометками, на витрину они не выходят
       photos,
       cover: photos[0] || 0,
       price,

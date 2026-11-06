@@ -164,7 +164,7 @@ class Catalog {
     const flagMap = new Map(flags.rows.map((f) => [f.model_key, f]));
 
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: this.tz }).format(new Date()); // YYYY-MM-DD в часовом поясе магазина
-    const all = [...buildModels(rows, { reserved: resMap, sitePrices, today }),
+    const all = [...buildModels(rows, { reserved: resMap, sitePrices, today, showNoteSizes: Boolean(cfg.showNoteSizes) }),
       ...buildExtModels(extRows, { markupPct: Number((cfg.electronics || {}).markupPct) || 0, showOldPrice: Boolean((cfg.electronics || {}).showOldPrice), baseUrl: this.partner ? this.partner.base : '' })];
     const models = [];
     for (const m of all) {
@@ -173,6 +173,7 @@ class Catalog {
       m.featured = !!(f && f.featured);
       m.badge = (f && f.badge) || '';
       if (!m.hideReason && cfg.requirePhoto && !m.photos.length) m.hideReason = 'no_photo';
+      if (!m.hideReason && m.noteOnly) m.hideReason = 'note_only'; // все размеры с пометками в артикуле (без коробки, один кроссовок...)
       if (!m.hideReason && !m.price) m.hideReason = 'no_price'; // без цены продавать нельзя
       m.hidden = !!m.hideReason;
       indexModel(m);

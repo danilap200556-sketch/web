@@ -56,7 +56,7 @@ async function startShop(suffix, overrides = {}, opts = {}) {
   for (const q of APP_SCHEMA) if ((opts.sitePrices !== false || !/site_prices/.test(q)) && (opts.queue !== false || !/order_writeoffs/.test(q))) await db.query(q);
   await db.query("INSERT INTO warehouses (name) VALUES ('Основной')");
   await db.migrate();
-  const app = createApp(cfg, db);
+  const app = createApp(cfg, db, opts.app || {});
   await bootstrap(app.locals.services);
   const server = await new Promise((resolve) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
   const base = `http://127.0.0.1:${server.address().port}`;

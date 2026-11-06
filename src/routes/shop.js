@@ -9,7 +9,7 @@ const { quote, PAY_METHODS } = require('../delivery');
 
 const SIZES_QUICK = ['36', '37', '38', '39', '40', '41', '42', '43', '44', '45', '46'];
 
-module.exports = function mount(app, { catalog, tracker, cfg, media }, shopCtx, send) {
+module.exports = function mount(app, { catalog, tracker, cfg, media, partner }, shopCtx, send) {
   // ---------- Главная ----------
   app.get('/', shopCtx, async (req, res, next) => {
     try {
@@ -299,7 +299,8 @@ module.exports = function mount(app, { catalog, tracker, cfg, media }, shopCtx, 
   for (const d of Object.values(DEPARTMENTS)) app.get(`/${d.slug}`, (req, res) => res.redirect(301, `/catalog?dept=${d.slug}`));
 
   // ---------- Карточка модели ----------
-  app.get('/p/:slug', shopCtx, (req, res) => {
+  app.get('/p/:slug', shopCtx, async (req, res, next) => {
+    try {
     const ctx = req.ctx;
     const m = catalog.bySlug.get(String(req.params.slug).toLowerCase());
     if (!m) return send(req, res, {
@@ -312,10 +313,12 @@ module.exports = function mount(app, { catalog, tracker, cfg, media }, shopCtx, 
     const availSizes = m.sizes.filter((s) => s.qty > 0);
     const firstFree = m.sizes.find((s) => s.price && s.qty > 0);
     const photos = m.photos.slice(0, 8);
+    const isExt = Boolean(m.ext); // электроника партнёра: один вариант без размеров
+    const descr = isExt ? await partner.description(m.ext.id) : m.description;
     const jsonLd = {
       '@context': 'https://schema.org', '@type': 'Product', name: m.title, brand: m.brand ? { '@type': 'Brand', name: m.brand } : undefined,
       sku: m.key, image: photos.map((id) => `${ctx.baseUrl}${photoUrl(id, 1280)}`),
-      description: m.description || `${m.fullName}. Оригинал, доставка по России.`,
+      description: descr || `${m.fullName}. Оригинал, доставка по России.`,
       offers: { '@type': 'Offer', priceCurrency: 'RUB', price: String(m.price), ...(m.oldPrice && m.saleTo ? { priceValidUntil: m.saleTo } : {}), availability: m.inStock ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock', url: `${ctx.baseUrl}/p/${m.slug}` },
     };
     const d = ctx.deliveryData;
@@ -335,27 +338,28 @@ module.exports = function mount(app, { catalog, tracker, cfg, media }, shopCtx, 
           <h1 class="buy__title">${m.model || m.title}</h1>
           ${m.colorway ? html`<p class="buy__color">${m.colorway}</p>` : ''}
           <p class="buy__price">${m.oldPrice ? html`<span class="price price--lg price--sale">${rub(m.price)}</span><s class="price-old price-old--lg">${rub(m.oldPrice)}</s><span class="chip chip--sale">−${m.discount}%</span>` : html`<span class="price price--lg">${m.priceMax > m.price && !firstFree ? 'от ' : ''}${rub(firstFree ? firstFree.price : m.price)}</span>`}
-            ${m.inStock ? html`<span class="stockline is-in">В наличии: ${availSizes.length} ${plural(availSizes.length, 'размер', 'размера', 'размеров')}</span>` : html`<span class="stockline">Нет в наличии</span>`}</p>
+            ${m.inStock ? html`<span class="stockline is-in">${isExt ? 'В наличии' : html`В наличии: ${availSizes.length} ${plural(availSizes.length, 'размер', 'размера', 'размеров')}`}</span>` : html`<span class="stockline">Нет в наличии</span>`}</p>
           ${m.oldPrice && m.saleTo ? html`<p class="saleinfo">${icon('clock')} Скидка действует до ${m.saleTo.split('-').reverse().join('.')}</p>` : ''}
           <form class="buy__form" action="/cart/add" method="post" data-add-form>
             <input type="hidden" name="back" value="/p/${m.slug}">
-            <div class="buy__sizes-head"><b>Размер${m.sizes.some((s) => s.size && !isNaN(parseFloat(s.size))) ? ' (EU)' : ''}</b><span class="muted" data-size-hint>Выберите размер</span></div>
+            ${isExt ? html`<input type="radio" name="pid" value="${m.sizes[0].id}" ${m.inStock ? raw('checked') : raw('disabled')} hidden data-size-label="" data-left="${m.sizes[0].qty}">` : html`<div class="buy__sizes-head"><b>Размер${m.sizes.some((s) => s.size && !isNaN(parseFloat(s.size))) ? ' (EU)' : ''}</b><span class="muted" data-size-hint>Выберите размер</span></div>
             <div class="sizes sizes--pdp" role="radiogroup" aria-label="Размер">
               ${m.sizes.map((s) => html`<label class="size${s.qty > 0 ? '' : ' is-off'}" title="${s.qty > 0 ? (s.qty <= 2 ? 'Осталось ' + s.qty + ' шт.' : 'В наличии') : 'Нет в наличии'}">
                 <input type="radio" name="pid" value="${s.id}" ${s.qty > 0 ? '' : raw('disabled')} data-size-label="${s.label}" data-left="${s.qty}" required><span>${s.label}</span></label>`)}
-            </div>
+            </div>`}
             <button class="btn btn--lg btn--block" type="submit" ${m.inStock ? '' : raw('disabled')} data-add-btn>${m.inStock ? html`${icon('bag')} Добавить в корзину` : 'Нет в наличии'}</button>
           </form>
           <ul class="perks">
             <li>${icon('truck')}<span><b>Доставка</b> от ${rub(minDelivery ? minDelivery.q.price : 0)}${ctx.freeFrom ? html`, бесплатно от ${rub(ctx.freeFrom)}` : ''}</span></li>
-            <li>${icon('store')}<span><b>Самовывоз</b> и примерка в магазине</span></li>
-            <li>${icon('shield')}<span><b>Оригинал</b>, проверяем каждую пару</span></li>
+            ${isExt ? html`<li>${icon('box')}<span><b>Поставка партнёра</b>: менеджер подтвердит наличие и срок</span></li>
+            <li>${icon('shield')}<span><b>Оригинал</b>, чек и документы при получении</span></li>` : html`<li>${icon('store')}<span><b>Самовывоз</b> и примерка в магазине</span></li>
+            <li>${icon('shield')}<span><b>Оригинал</b>, проверяем каждую пару</span></li>`}
           </ul>
-          <details class="acc" ${m.description ? raw('open') : ''}><summary>Описание</summary><div class="acc__body">${m.description ? m.description.split(/\n{2,}/).map((p) => html`<p>${p}</p>`) : html`<p>${m.fullName}. Артикул: ${m.key}.</p>`}</div></details>
+          <details class="acc" ${descr ? raw('open') : ''}><summary>Описание</summary><div class="acc__body">${descr ? descr.split(/\n{2,}/).map((p) => html`<p>${p}</p>`) : html`<p>${m.fullName}. Артикул: ${m.key}.</p>`}</div></details>
           <details class="acc"><summary>Доставка и оплата</summary><div class="acc__body">
             ${d.methods.filter((x) => x.active).map((x) => html`<p><b>${x.title}</b>${x.eta ? ' · ' + x.eta : ''}${x.price ? ' · от ' + rub(x.price) : ' · бесплатно'}</p>`)}
             <p><a href="/delivery">Подробнее о доставке и возврате</a></p></div></details>
-          <p class="muted buy__sku">Артикул: ${m.key}</p>
+          <p class="muted buy__sku">${isExt ? 'Поставщик: Sergeev Electronics' : html`Артикул: ${m.key}`}</p>
         </div>
       </div>
       ${related.length ? html`<section class="block block--tight"><div class="block__head"><div><p class="eyebrow">Вам может понравиться</p><h2>Похожие модели</h2></div></div>
@@ -363,6 +367,7 @@ module.exports = function mount(app, { catalog, tracker, cfg, media }, shopCtx, 
     </section>`;
     send(req, res, { title: m.title + (m.colorway ? ` «${m.colorway}»` : ''), body, bodyClass: 'page-pdp', canonical: `/p/${m.slug}`, og: m.cover ? { image: photoUrl(m.cover, 640) } : null, jsonLd,
       description: `${m.fullName}: ${rub(m.price)}${m.inStock ? ', в наличии' : ''}. Оригинал, доставка по России и самовывоз.` });
+    } catch (e) { next(e); }
   });
 
   // ---------- Доставка и оплата ----------

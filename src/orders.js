@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const { RESERVING, queueFilter } = require('./catalog');
 const { quote, cityAllowed, PAY_METHODS } = require('./delivery');
 const { normalizePhone, isEmail, str } = require('./util');
+const { isExtPid } = require('./ext');
 
 class OrderError extends Error {}
 
@@ -69,9 +70,19 @@ function validateCheckout(body, methods, points, subtotal, ext = null, payCodes 
 }
 
 // Создаёт заказ одной транзакцией. priced - результат cart.price() (только годные позиции).
-async function createOrder(db, { form, priced, catalog, idemKey, vid, sid, source, notifier }) {
+async function createOrder(db, { form, priced, catalog, idemKey, vid, sid, source, notifier, partner }) {
   const lines = priced.lines.filter((l) => !l.gone && !l.out && l.qty > 0);
   if (!lines.length) throw new OrderError('Корзина пуста');
+  // Товары партнёра: цена и наличие перепроверяются на их сайте прямо перед заказом (сайт партнёра недоступен - берём то, что есть)
+  if (partner && partner.enabled()) {
+    for (const l of lines.filter((x) => isExtPid(x.pid))) {
+      const v = await partner.verify(l.model.ext.path);
+      if (v && (!v.inStock || Math.round(v.price) !== Math.round(l.model.ext.apiPrice))) {
+        catalog.invalidate();
+        throw new OrderError(`${l.model.title}: ${v.inStock ? 'изменилась цена у поставщика' : 'товара уже нет в наличии'}. Обновите корзину`);
+      }
+    }
+  }
   const result = await db.tx(async (c) => {
     // Один заказ за раз: так два покупателя не займут последнюю пару одновременно (пользователю сайта нельзя блокировать строки склада)
     await c.query('SELECT pg_advisory_xact_lock(727302)');
@@ -79,7 +90,8 @@ async function createOrder(db, { form, priced, catalog, idemKey, vid, sid, sourc
       const dup = await c.query('SELECT number, token FROM webshop.orders WHERE idem_key = $1', [idemKey]);
       if (dup.rows[0]) return { number: dup.rows[0].number, token: dup.rows[0].token, repeated: true };
     }
-    const ids = lines.map((l) => l.pid);
+    const stockLines = lines.filter((l) => !isExtPid(l.pid)); // со склада проверяем остаток; товары партнёра проверены выше
+    const ids = stockLines.map((l) => l.pid);
     const avail = await c.query(
       `SELECT p.id,
               GREATEST(COALESCE((SELECT SUM(quantity) FROM stock WHERE product_id = p.id), 0), 0)::int
@@ -87,7 +99,7 @@ async function createOrder(db, { form, priced, catalog, idemKey, vid, sid, sourc
                            WHERE oi.product_id = p.id AND o.status = ANY($2) ${queueFilter(catalog.queueOk !== false)}), 0)::int AS free
          FROM products p WHERE p.id = ANY($1)`, [ids, RESERVING]);
     const free = new Map(avail.rows.map((r) => [r.id, r.free]));
-    const short = lines.filter((l) => (free.get(l.pid) ?? 0) < l.qty);
+    const short = stockLines.filter((l) => (free.get(l.pid) ?? 0) < l.qty);
     if (short.length) {
       throw new OrderError('Пока вы оформляли заказ, часть товаров разобрали: ' +
         short.map((l) => `${l.model.title}, размер ${l.size.label}`).join('; ') + '. Обновите корзину');
@@ -117,7 +129,7 @@ async function createOrder(db, { form, priced, catalog, idemKey, vid, sid, sourc
         `INSERT INTO webshop.order_items (order_id, product_id, sku, model_key, title, type, size, photo_id, price, qty)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
         [orderId, l.pid, l.size.sku, l.model.key, l.model.title + (l.model.colorway ? ` «${l.model.colorway}»` : ''), l.model.type,
-          l.size.label, l.model.cover || null, l.price, l.qty]);
+          l.size.size ? l.size.label : '', l.model.cover || null, l.price, l.qty]);
     }
     await c.query("INSERT INTO webshop.order_events (order_id, kind, text) VALUES ($1, 'status', 'Заказ оформлен на сайте')", [orderId]);
     if (notifier) await notifier.enqueue(c, orderId); // уведомление в той же транзакции: заказ без него не появится

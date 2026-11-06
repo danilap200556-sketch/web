@@ -4,6 +4,7 @@
 // паузой (30 с, 2 мин, 10 мин, 30 мин, дальше раз в час, всего 14 попыток, около суток). Сбой уведомления заказ не задерживает и не отменяет.
 const { rub, formatPhone } = require('./util');
 const { PAY_METHODS } = require('./delivery');
+const { EXT_BASE } = require('./ext');
 
 const BACKOFF_SEC = [30, 120, 600, 1800, 3600];
 const MAX_ATTEMPTS = 14;
@@ -49,14 +50,14 @@ function createNotifier({ db, cfg, log = console }) {
     const { rows } = await db.query('SELECT * FROM webshop.orders WHERE id = $1', [orderId]);
     const o = rows[0];
     if (!o) return null;
-    const items = (await db.query('SELECT title, size, price, qty FROM webshop.order_items WHERE order_id = $1 ORDER BY id', [orderId])).rows;
+    const items = (await db.query('SELECT title, size, price, qty, product_id FROM webshop.order_items WHERE order_id = $1 ORDER BY id', [orderId])).rows;
     const lines = [`Новый заказ №${o.number} на ${rub(Number(o.total))}`, ''];
     lines.push(`Клиент: ${o.name}, ${formatPhone(o.phone)}${o.email ? ', ' + o.email : ''}`);
     const where = o.delivery_kind === 'pickup' ? '' : [o.delivery_city, o.delivery_point || o.delivery_address].filter(Boolean).join(', ');
     lines.push(`Доставка: ${o.delivery_title}${where ? ' · ' + where : ''}${Number(o.delivery_cost) ? ` (${rub(Number(o.delivery_cost))})` : ''}`);
     lines.push(`Оплата: ${(PAY_METHODS[o.pay_method] || {}).title || o.pay_method}`);
     lines.push('', 'Состав:');
-    for (const i of items) lines.push(`• ${i.title} · ${i.size} × ${i.qty} - ${rub(Number(i.price) * i.qty)}`);
+    for (const i of items) lines.push(`• ${i.title}${i.size ? ' · ' + i.size : ''} × ${i.qty} - ${rub(Number(i.price) * i.qty)}${Number(i.product_id) >= EXT_BASE ? ' [товар партнёра]' : ''}`);
     if (o.comment) lines.push('', `Комментарий: ${o.comment}`);
     if (siteUrl) lines.push('', `${siteUrl}/admin/orders/${o.id}`);
     return lines.join('\n');

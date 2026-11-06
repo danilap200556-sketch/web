@@ -12,6 +12,7 @@ const { createWriteoff } = require('./writeoff');
 const { createNotifier } = require('./notify');
 const { createCarriers } = require('./carriers');
 const { createPayments } = require('./payments');
+const { createPartner } = require('./partner');
 const { currentSeason, SEASONS } = require('./seasons');
 const { DEPARTMENTS } = require('./model');
 const { createMedia } = require('./media');
@@ -26,16 +27,18 @@ function createApp(cfg, db, opts = {}) {
   app.set('trust proxy', cfg.trustProxy);
 
   const settings = createSettings(db, cfg);
+  const partner = createPartner({ db, cfg, fetchImpl: opts.fetchImpl, sleep: opts.sleep });
   const catalog = new Catalog(db, cfg, settings);
+  catalog.partner = partner;
   const delivery = createDelivery(db);
   const carts = createCarts(db);
   const tracker = createTracker(db, cfg);
-  const media = createMedia(db);
+  const media = createMedia(db, { partner });
   const writeoff = createWriteoff(db);
   const notifier = createNotifier({ db, cfg });
   const carriers = createCarriers(cfg, { fetchImpl: opts.fetchImpl });
   const payments = createPayments({ db, cfg, settings, notifier, fetchImpl: opts.fetchImpl });
-  const services = { cfg, db, settings, catalog, delivery, carts, tracker, media, writeoff, notifier, carriers, payments };
+  const services = { cfg, db, settings, catalog, delivery, carts, tracker, media, writeoff, notifier, carriers, payments, partner };
   app.locals.services = services;
 
   // --- Заголовки безопасности. Скрипты и стили - только свои файлы (без inline).
@@ -146,7 +149,7 @@ function createApp(cfg, db, opts = {}) {
     res.status(500).type('text').send('Что-то пошло не так. Попробуйте ещё раз через минуту.');
   });
 
-  app.locals.shutdown = async () => { writeoff.stop(); await notifier.stop(); await tracker.flush(); };
+  app.locals.shutdown = async () => { writeoff.stop(); await notifier.stop(); await partner.stop(); await tracker.flush(); };
   return app;
 }
 

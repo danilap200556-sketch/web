@@ -66,7 +66,7 @@ async function analyse(data) {
   }
 }
 
-function createMedia(db) {
+function createMedia(db, { partner } = {}) {
   const cache = new ByteLru(MAX_BYTES);
   const inflight = new Map();
   const infoCache = new Map(); // id фото -> { gain, clean }
@@ -87,7 +87,7 @@ function createMedia(db) {
 
   // Фото с чистым светлым фоном (для крупных плашек на главной)
   async function isClean(id) {
-    if (!id) return false;
+    if (!id || id < 0) return false;
     return (await info(id)).clean;
   }
 
@@ -101,7 +101,35 @@ function createMedia(db) {
     return { buf: await img.toBuffer(), type: webp ? 'image/webp' : 'image/jpeg' };
   }
 
+  // Фото товара партнёра: скачивается с их сайта, сжимается и держится в памяти час (список фото карточки может обновиться)
+  async function renderExt(id, idx, w, webp) {
+    const src = partner ? await partner.fetchImage(id, idx) : null;
+    if (!src) return null;
+    let img = sharp(src.buf).rotate().flatten({ background: '#ffffff' }).resize({ width: w, withoutEnlargement: true });
+    img = webp ? img.webp({ quality: 80 }) : img.jpeg({ quality: 82, mozjpeg: true });
+    return { buf: await img.toBuffer(), type: webp ? 'image/webp' : 'image/jpeg', at: Date.now() };
+  }
+
   function mount(app) {
+    app.get('/media/x/:n/:w.jpg', async (req, res) => {
+      const n = parseInt(req.params.n, 10);
+      const w = parseInt(req.params.w, 10);
+      if (!partner || !Number.isInteger(n) || n <= 0 || !WIDTHS.has(w)) return res.status(404).end();
+      const webp = /image\/webp/.test(req.get('accept') || '');
+      const key = `x${n}:${w}:${webp ? 'w' : 'j'}`;
+      res.set({ 'Cache-Control': 'public, max-age=86400', Vary: 'Accept' });
+      let hit = cache.get(key);
+      if (hit && Date.now() - hit.at > 3600_000) hit = null;
+      if (!hit) {
+        let p = inflight.get(key);
+        if (!p) { p = renderExt(Math.floor(n / 10), n % 10, w, webp).finally(() => inflight.delete(key)); inflight.set(key, p); }
+        try { hit = await p; } catch (e) { console.error('[media]', e.message); return res.status(502).set('Cache-Control', 'no-store').end(); }
+        if (!hit) return res.status(404).set('Cache-Control', 'no-store').end();
+        cache.set(key, hit);
+      }
+      res.type(hit.type).send(hit.buf);
+    });
+
     app.get('/media/p/:id/:w.jpg', async (req, res) => {
       const id = parseInt(req.params.id, 10);
       const w = parseInt(req.params.w, 10);

@@ -16,6 +16,7 @@ function defaults(cfg) {
     electronicsTeaser: true,      // плашка «скоро электроника» на главной
     freeShippingNote: true,       // показывать порог бесплатной доставки в шапке
     notifyEmail: '',
+    electronics: { markupPct: 0, showOldPrice: false },  // наценка к ценам партнёра, % (0 - цена как у партнёра)
     // Оплата. Ссылка СБП (QR НСПК) и реквизиты правятся в админке («Настройки»). Нужны для QR-кода, перевода по реквизитам и платёжки.
     payment: {
       sbpEnabled: true,

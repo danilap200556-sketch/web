@@ -10,7 +10,7 @@ const { quote, PAY_METHODS } = require('../delivery');
 const { OrderError, STATUSES, FLOW, validateCheckout, createOrder, getOrderByToken } = require('../orders');
 const { photoUrl } = require('../shopviews');
 
-module.exports = function mount(app, { cfg, db, catalog, carts, tracker, delivery, notifier, carriers, payments }, shopCtx, send) {
+module.exports = function mount(app, { cfg, db, catalog, carts, tracker, delivery, notifier, carriers, payments, partner }, shopCtx, send) {
   const { cartName, cartCountName, cookieOpts } = app.locals.cookies;
   const fmt = dateFmt(cfg.tz);
   const orderLimiter = new sec.RateLimiter(8, 10 * 60_000);
@@ -51,8 +51,8 @@ module.exports = function mount(app, { cfg, db, catalog, carts, tracker, deliver
               <div class="cartline__info">
                 <a class="cartline__title" href="/p/${l.model.slug}">${l.model.title}</a>
                 <p class="muted">${[l.model.type, l.model.colorway].filter(Boolean).join(' · ')}</p>
-                <p class="cartline__size">Размер: <b>${l.size.label}</b></p>
-                ${l.out ? html`<p class="warn">Этой пары уже нет в наличии - уберите её из корзины</p>` : l.short ? html`<p class="warn">В наличии только ${l.max} шт.</p>` : ''}
+                ${l.size.size ? html`<p class="cartline__size">Размер: <b>${l.size.label}</b></p>` : ''}
+                ${l.out ? html`<p class="warn">Этого товара уже нет в наличии - уберите его из корзины</p>` : l.short ? html`<p class="warn">В наличии только ${l.max} шт.</p>` : ''}
               </div>
               <form class="qty" action="/cart/update" method="post" data-qty-form>
                 <input type="hidden" name="pid" value="${l.pid}">
@@ -110,7 +110,7 @@ module.exports = function mount(app, { cfg, db, catalog, carts, tracker, deliver
       if (json) {
         return res.json({
           ok: true, count: priced.count, subtotal: rub(priced.subtotal),
-          item: { title: hit.model.title, size: hit.size.label, price: rub(hit.size.price), img: hit.model.cover ? photoUrl(hit.model.cover, 360) : '' },
+          item: { title: hit.model.title, size: hit.size.size ? hit.size.label : '', price: rub(hit.size.price), img: hit.model.cover ? photoUrl(hit.model.cover, 360) : '' },
         });
       }
       res.redirect('/cart');
@@ -237,7 +237,7 @@ module.exports = function mount(app, { cfg, db, catalog, carts, tracker, deliver
         <aside class="summary summary--sticky">
           <h2>Ваш заказ</h2>
           <ul class="mini">
-            ${lines.map((l) => html`<li><img src="${photoUrl(l.model.cover, 360)}" alt="" width="64" height="64" loading="lazy"><div><b>${l.model.title}</b><span>Размер ${l.size.label} · ${l.qty} шт.</span></div><i>${rub(l.sum)}</i></li>`)}
+            ${lines.map((l) => html`<li><img src="${photoUrl(l.model.cover, 360)}" alt="" width="64" height="64" loading="lazy"><div><b>${l.model.title}</b><span>${l.size.size ? 'Размер ' + l.size.label + ' · ' : ''}${l.qty} шт.</span></div><i>${rub(l.sum)}</i></li>`)}
           </ul>
           <dl class="sumrows">
             <dt>Товары</dt><dd data-sum-sub data-value="${priced.subtotal}">${rub(priced.subtotal)}</dd>
@@ -395,7 +395,7 @@ module.exports = function mount(app, { cfg, db, catalog, carts, tracker, deliver
       const src = who.sid ? await db.query("SELECT source FROM webshop.visits WHERE sid = $1 AND source <> '' ORDER BY at LIMIT 1", [who.sid]) : { rows: [] };
       let order;
       try {
-        order = await createOrder(db, { form: data, priced, catalog, notifier, idemKey: String(form.delivery ? req.body.idem || '' : '').slice(0, 40) || null, vid: who.vid, sid: who.sid, source: src.rows[0]?.source || '' });
+        order = await createOrder(db, { form: data, priced, catalog, notifier, partner, idemKey: String(form.delivery ? req.body.idem || '' : '').slice(0, 40) || null, vid: who.vid, sid: who.sid, source: src.rows[0]?.source || '' });
       } catch (e) {
         if (!(e instanceof OrderError)) throw e;
         return renderCheckout(req, res, { form, error: e.message, status: 409 });
@@ -433,7 +433,7 @@ module.exports = function mount(app, { cfg, db, catalog, carts, tracker, deliver
           <div class="cartlist">
             ${o.items.map((i) => html`<article class="cartline cartline--static">
               <span class="cartline__img">${i.photo_id ? html`<img src="${photoUrl(i.photo_id, 360)}" alt="" width="360" height="360" loading="lazy">` : ''}</span>
-              <div class="cartline__info"><span class="cartline__title">${i.title}</span><p class="muted">${i.type}</p><p class="cartline__size">Размер: <b>${i.size}</b> · ${i.qty} шт.</p></div>
+              <div class="cartline__info"><span class="cartline__title">${i.title}</span><p class="muted">${i.type}</p><p class="cartline__size">${i.size ? html`Размер: <b>${i.size}</b> · ` : ''}${i.qty} шт.</p></div>
               <div class="cartline__sum"><b>${rub(Number(i.price) * i.qty)}</b></div></article>`)}
           </div>
           <aside class="summary">

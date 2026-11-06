@@ -160,7 +160,7 @@
         const n = el('div');
         const row = el('div', 'toast__row');
         const img = el('img'); img.alt = ''; if (data.item.img) img.src = data.item.img;
-        const t = el('div'); t.appendChild(el('b', null, data.item.title)); t.appendChild(el('small', null, 'Размер ' + data.item.size + ' · ' + data.item.price));
+        const t = el('div'); t.appendChild(el('b', null, data.item.title)); t.appendChild(el('small', null, (data.item.size ? 'Размер ' + data.item.size + ' · ' : '') + data.item.price));
         row.append(img, t);
         const act = el('div', 'toast__actions');
         const go = el('a', 'btn btn--sm', 'Корзина'); go.href = '/cart';

@@ -3,6 +3,7 @@
 // склеиваются в модели (см. model.js) и обновляются раз в `catalogTtl` секунд или по сигналу
 // (заказ оформлен, админ скрыл модель).
 const { buildModels, DEPARTMENTS } = require('./model');
+const { buildExtModels } = require('./ext');
 
 const PAGE_SIZE = 24;
 // Заказы в этих статусах держат товар в резерве: из остатка склада вычитаем, пока склад не списал его сам
@@ -141,7 +142,7 @@ class Catalog {
 
   async load() {
     const { db } = this;
-    const [prod, photos, reserved, flags, cfg, sitePrices] = await Promise.all([
+    const [prod, photos, reserved, flags, cfg, sitePrices, extRows] = await Promise.all([
       db.query(`SELECT p.id, p.sku, p.name, p.description, p.price::float8 AS price, COALESCE(p.market_vendor, '') AS vendor,
                        COALESCE(p.market_category_name, '') AS category, p.created_at, GREATEST(COALESCE(st.q, 0), 0)::int AS qty
                   FROM products p
@@ -151,6 +152,7 @@ class Catalog {
       db.query('SELECT model_key, hidden, featured, badge FROM webshop.model_flags'),
       this.settings.get(),
       this.loadSitePrices(),
+      this.partner ? this.partner.rows().catch((e) => { console.warn(`[partner] каталог электроники недоступен: ${e.message}`); return []; }) : [],
     ]);
     const photoMap = new Map();
     for (const r of photos.rows) {
@@ -162,7 +164,8 @@ class Catalog {
     const flagMap = new Map(flags.rows.map((f) => [f.model_key, f]));
 
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: this.tz }).format(new Date()); // YYYY-MM-DD в часовом поясе магазина
-    const all = buildModels(rows, { reserved: resMap, sitePrices, today });
+    const all = [...buildModels(rows, { reserved: resMap, sitePrices, today }),
+      ...buildExtModels(extRows, { markupPct: Number((cfg.electronics || {}).markupPct) || 0, showOldPrice: Boolean((cfg.electronics || {}).showOldPrice), baseUrl: this.partner ? this.partner.base : '' })];
     const models = [];
     for (const m of all) {
       const f = flagMap.get(m.key);

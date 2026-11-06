@@ -17,6 +17,7 @@ const ACCESS = {
   customers: ['owner', 'manager'],
   traffic: ['owner', 'manager'],
   showcase: ['owner', 'editor'],
+  electronics: ['owner', 'editor'],
   delivery: ['owner'],
   users: ['owner'],
   settings: ['owner'],

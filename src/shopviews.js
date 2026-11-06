@@ -8,7 +8,8 @@ const { SEASONS } = require('./seasons');
 
 const SEASON_ICON = { winter: 'snow', spring: 'flower', summer: 'sun', autumn: 'leaf' };
 
-const photoUrl = (id, w = 640) => `/media/p/${id}/${w}.jpg`;
+// Отрицательный номер - фото товара партнёра (см. ext.js)
+const photoUrl = (id, w = 640) => (id < 0 ? `/media/x/${-id}/${w}.jpg` : `/media/p/${id}/${w}.jpg`);
 
 // Диапазон размеров в наличии: "38-44" или "38 · 40 · 44"
 function sizeRange(m) {

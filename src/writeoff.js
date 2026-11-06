@@ -12,6 +12,8 @@
 // приводят очередь в соответствие со статусами заказов. Поэтому ничего не теряется, если приложение ещё не обновлено или у сайта
 // пока нет прав: как только таблица и права появятся, очередь догонит.
 
+const { EXT_BASE } = require('./ext'); // товары партнёра не со склада: в очередь списания не попадают
+
 const STATE_TEXT = {
   pending: 'Ждёт списания: сотрудник спишет его в приложении «Склад»',
   writing: 'Списывается в приложении прямо сейчас',
@@ -57,10 +59,10 @@ function createWriteoff(db, { intervalMs = 60_000 } = {}) {
         `INSERT INTO order_writeoffs (source, account_id, order_ref, state, lines)
          SELECT 'site', 0, o.number, 'pending',
                 (SELECT jsonb_agg(jsonb_build_object('key', i.sku, 'name', i.title, 'qty', i.qty) ORDER BY i.id)
-                   FROM webshop.order_items i WHERE i.order_id = o.id)
+                   FROM webshop.order_items i WHERE i.order_id = o.id AND COALESCE(i.product_id, 0) < ${EXT_BASE})
            FROM webshop.orders o
           WHERE (o.status = 'packed' OR (o.status = ANY($1) AND o.updated_at >= $2::timestamptz))
-            AND EXISTS (SELECT 1 FROM webshop.order_items i WHERE i.order_id = o.id)
+            AND EXISTS (SELECT 1 FROM webshop.order_items i WHERE i.order_id = o.id AND COALESCE(i.product_id, 0) < ${EXT_BASE})
          ON CONFLICT (source, account_id, order_ref) DO NOTHING`, [ENQUEUE_STATUSES, since]);
       // 2. Заказ вернули в работу после отмены (до списания): снова в очередь
       const reopened = await db.query(

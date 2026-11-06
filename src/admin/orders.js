@@ -10,7 +10,9 @@ const { pager } = require('./layout');
 const PAGE = 25;
 const NEXT_LABEL = { new: 'Подтвердить заказ', confirmed: 'Отметить оплаченным', paid: 'Отметить собранным', packed: 'Отметить отправленным', shipped: 'Отметить полученным' };
 
-module.exports = function mount({ db, auth, render, fmt, chip, router, catalog, writeoff }) {
+const { EXT_BASE } = require('../ext');
+
+module.exports = function mount({ db, auth, render, fmt, chip, router, catalog, writeoff, partner }) {
   // ---------- Список ----------
   router.get('/orders', auth.require('orders'), async (req, res, next) => {
     try {
@@ -118,8 +120,10 @@ module.exports = function mount({ db, auth, render, fmt, chip, router, catalog, 
 
           <section class="card">
             <header class="card__h"><h2>Состав заказа</h2></header>
+            ${o.items.some((i) => Number(i.product_id) >= EXT_BASE) ? html`<p class="alert">В заказе есть товары партнёра (Sergeev Electronics): со склада они не списываются, их нужно заказать у партнёра.
+              ${o.items.filter((i) => Number(i.product_id) >= EXT_BASE).map((i) => html`<br><a href="${partner.base}/${String(i.sku).replace(/^[^:]+:/, '')}" target="_blank" rel="noopener">${i.title}</a>`)}</p>` : ''}
             <div class="tablewrap"><table class="table"><thead><tr><th>Товар</th><th>Размер</th><th class="num">Цена</th><th class="num">Кол-во</th><th class="num">Сумма</th></tr></thead><tbody>
-              ${o.items.map((i) => html`<tr><td><div class="prod">${i.photo_id ? html`<img src="${photoUrl(i.photo_id, 360)}" alt="" width="44" height="44" loading="lazy">` : html`<span class="toplist__ph"></span>`}<div><b>${i.title}</b><small class="muted">${i.type} · арт. ${i.sku}</small></div></div></td>
+              ${o.items.map((i) => html`<tr><td><div class="prod">${i.photo_id ? html`<img src="${photoUrl(i.photo_id, 360)}" alt="" width="44" height="44" loading="lazy">` : html`<span class="toplist__ph"></span>`}<div><b>${i.title}</b>${Number(i.product_id) >= EXT_BASE ? html` <span class="chip chip--amber">партнёр</span>` : ''}<small class="muted">${i.type} · арт. ${i.sku}</small></div></div></td>
                 <td>${i.size}</td><td class="num">${rub(i.price)}</td><td class="num">${i.qty}</td><td class="num"><b>${rub(Number(i.price) * i.qty)}</b></td></tr>`)}
             </tbody><tfoot>
               <tr><td colspan="4" class="num muted">Товары</td><td class="num">${rub(o.subtotal)}</td></tr>

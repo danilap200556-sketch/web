@@ -168,6 +168,25 @@ const SCHEMA = [
      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
    )`,
+  // Каталог электроники партнёра (Sergeev Electronics): ассортимент, цены, наличие и фото подтягивает фоновая синхронизация
+  `CREATE TABLE IF NOT EXISTS webshop.ext_products (
+     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+     source TEXT NOT NULL,
+     path TEXT NOT NULL,
+     section TEXT NOT NULL DEFAULT '',
+     title TEXT NOT NULL,
+     brand TEXT NOT NULL DEFAULT '',
+     sku TEXT NOT NULL DEFAULT '',
+     price NUMERIC(12,2) NOT NULL DEFAULT 0,
+     old_price NUMERIC(12,2),
+     in_stock BOOLEAN NOT NULL DEFAULT TRUE,
+     images JSONB NOT NULL DEFAULT '[]'::jsonb,
+     description TEXT NOT NULL DEFAULT '',
+     detail_at TIMESTAMPTZ,
+     seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+     UNIQUE (source, path)
+   )`,
   `CREATE INDEX IF NOT EXISTS payments_order_idx ON webshop.payments (order_id)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS payments_provider_uq ON webshop.payments (provider, provider_payment_id) WHERE provider_payment_id <> ''`,
 ];

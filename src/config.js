@@ -56,6 +56,15 @@ function load(env = process.env) {
         height: intEnv(env.PARCEL_HEIGHT_CM, 14),
       },
     },
+    // Каталог электроники партнёра (Sergeev Electronics). По умолчанию включён на боевом сервере, в разработке и тестах выключен.
+    // PARTNER_SYNC=off выключает; PARTNER_SECTIONS - список разделов партнёра через запятую; PARTNER_DELAY_MS - пауза между запросами к их сайту.
+    partner: {
+      enabled: env.PARTNER_SYNC ? env.PARTNER_SYNC !== 'off' : prod,
+      autostart: env.PARTNER_AUTOSTART !== 'off', // фоновый обход по таймеру (в тестах выключают и запускают вручную)
+      baseUrl: (env.PARTNER_URL || 'https://sergeev-electronics.ru').replace(/\/+$/, ''),
+      sections: (env.PARTNER_SECTIONS || '').split(/[\s,;]+/).filter(Boolean),
+      delayMs: intEnv(env.PARTNER_DELAY_MS, 3000),
+    },
     // Эквайринг ТБанк (карта онлайн): ключи терминала из личного кабинета. Деньги приходят на расчётный счёт по договору эквайринга.
     // TBANK_TAXATION (например usn_income) включает чек в запросе платежа, если у терминала подключена облачная касса.
     acquiring: {

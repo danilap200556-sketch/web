@@ -73,4 +73,34 @@
 
   // Выпадающие списки в фильтрах применяются сразу
   $$('select[data-autosubmit]').forEach((s) => s.addEventListener('change', () => s.form.submit()));
+
+  // Фон первого экрана: файл уходит на сервер целиком (не формой), с полосой загрузки
+  $$('form[data-hero-upload]').forEach((form) => {
+    const file = $('[data-hero-file]', form);
+    const bar = $('[data-hero-progress]', form);
+    const msg = $('[data-hero-msg]', form);
+    const btn = $('button[type=submit]', form);
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const f = file.files && file.files[0];
+      if (!f) return;
+      if (f.size > 64 * 1024 * 1024) { msg.textContent = 'Файл больше 64 МБ: сожмите видео (1080p, 10-20 секунд)'; return; }
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', form.action);
+      xhr.setRequestHeader('Content-Type', f.type || 'application/octet-stream');
+      xhr.setRequestHeader('X-CSRF-Token', form.dataset.csrf);
+      xhr.setRequestHeader('Accept', 'application/json');
+      xhr.upload.addEventListener('progress', (ev) => { if (ev.lengthComputable) bar.value = Math.round((ev.loaded / ev.total) * 100); });
+      xhr.addEventListener('load', () => {
+        let r = null;
+        try { r = JSON.parse(xhr.responseText); } catch (err) { r = null; }
+        if (xhr.status === 200 && r && r.ok) { location.reload(); return; }
+        bar.hidden = true; btn.disabled = false;
+        msg.textContent = (r && r.error) || (xhr.status === 413 ? 'Файл слишком большой' : 'Не удалось загрузить файл. Обновите страницу и попробуйте ещё раз');
+      });
+      xhr.addEventListener('error', () => { bar.hidden = true; btn.disabled = false; msg.textContent = 'Нет связи с сервером'; });
+      bar.hidden = false; bar.value = 0; btn.disabled = true; msg.textContent = 'Загружаем ' + (f.size / 1048576).toFixed(1).replace('.', ',') + ' МБ...';
+      xhr.send(f);
+    });
+  });
 })();

@@ -1,5 +1,6 @@
 'use strict';
-// «Витрина и каталог»: сезон на главной, тексты, показ моделей на сайте.
+// «Витрина и каталог»: сезон на главной, тексты, фон первого экрана (своё видео или фото), показ моделей на сайте.
+const express = require('express');
 const { html } = require('../html');
 const { icon } = require('../icons');
 const { rub, num, plural, clampInt, str } = require('../util');
@@ -19,7 +20,7 @@ function priceNotice(catalog) {
 }
 const REASON = { manual: 'Скрыта вручную', no_photo: 'Нет фото', no_price: 'Нет цены', note_only: 'Только размеры с пометками (без коробки, один кроссовок...)' };
 
-module.exports = function mount({ db, cfg, auth, render, router, catalog, settings }) {
+module.exports = function mount({ db, cfg, auth, render, router, catalog, settings, heroMedia }) {
   router.get('/showcase', auth.require('showcase'), async (req, res, next) => {
     try {
       await catalog.ensure();
@@ -44,7 +45,29 @@ module.exports = function mount({ db, cfg, auth, render, router, catalog, settin
       const back = `/admin/showcase?${new URLSearchParams({ ...(q ? { q } : {}), ...(show ? { show } : {}), ...(page > 1 ? { page } : {}) })}`;
       const keep = (o) => { const u = new URLSearchParams(); for (const [k, v] of Object.entries({ q, show, ...o })) if (v) u.set(k, v); return u.toString(); };
 
+      const hm = s.heroMedia && s.heroMedia.id ? s.heroMedia : null;
       const body = html`
+      <section class="card card--pad">
+        <header class="card__h"><div><h2>Фон первого экрана</h2>
+          <p class="muted">Своё видео или фото на всю ширину главной, как у больших магазинов. Без файла там живой фон в цветах сезона.
+          Видео: MP4 или WebM, до 60 МБ, лучше 10-20 секунд, без звука (оно всё равно играет беззвучно и по кругу). Фото: JPEG, PNG или WebP, горизонтальное, от 1920 px по ширине.
+          Текст на главной лежит слева: удачнее кадры, где слева темно и спокойно.</p></div></header>
+        <div class="heromedia">
+          ${hm ? html`<div class="heromedia__now">${hm.kind === 'video'
+            ? html`<video class="heromedia__preview" src="/media/hero/${hm.id}" muted loop playsinline controls preload="metadata"></video>`
+            : html`<img class="heromedia__preview" src="/media/hero/${hm.id}" alt="Фон первого экрана">`}
+            <p>Сейчас на главной: <b>${hm.kind === 'video' ? 'видео' : 'фото'}</b>, ${(hm.size / 1048576).toFixed(1).replace('.', ',')} МБ</p></div>`
+            : html`<p class="heromedia__now muted">Сейчас на главной: живой фон в цветах сезона.</p>`}
+          <form class="heromedia__form" action="/admin/showcase/hero-media" method="post" data-hero-upload data-csrf="${req.admin.csrf}">${req.adminCsrf}
+            <label class="field">Новый файл<input type="file" name="file" accept="video/mp4,video/webm,image/jpeg,image/png,image/webp" required data-hero-file></label>
+            <button class="btn btn--primary" type="submit">Загрузить</button>
+            <progress class="heromedia__progress" max="100" value="0" hidden data-hero-progress></progress>
+            <p class="heromedia__msg" role="status" data-hero-msg></p>
+          </form>
+          ${hm ? html`<form method="post" action="/admin/showcase/hero-media/remove">${req.adminCsrf}<button class="btn" type="submit">Убрать и вернуть живой фон</button></form>` : ''}
+        </div>
+      </section>
+
       <section class="card card--pad">
         <header class="card__h"><div><h2>Сезон на главной странице</h2>
           <p class="muted">Сейчас на сайте: <b>${SEASONS[effective].title}</b>${mode === 'auto' ? ' (выбран автоматически по дате)' : ' (закреплён вручную)'}. От сезона зависят цвета сайта, заголовок и подборка «Выбор сезона».</p></div></header>
@@ -108,6 +131,34 @@ module.exports = function mount({ db, cfg, auth, render, router, catalog, settin
       await settings.set({ seasonMode: mode, heroOverrides: overrides, requirePhoto: req.body.requirePhoto === 'on', showNoteSizes: req.body.showNoteSizes === 'on', electronicsTeaser: req.body.electronicsTeaser === 'on' });
       catalog.invalidate();
       res.flash('ok', 'Витрина обновлена');
+      res.redirect('/admin/showcase');
+    } catch (e) { next(e); }
+  });
+
+  // Загрузка фона первого экрана. Файл приходит «как есть» (не формой): так видео в десятки мегабайт не нужно разбирать
+  // на части. Токен csrf - в заголовке X-CSRF-Token, его проверяет auth.require.
+  router.post('/showcase/hero-media',
+    express.raw({ type: () => true, limit: '64mb' }),
+    (req, res, next) => {
+      req.heroUpload = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+      const formToken = req.body && !Buffer.isBuffer(req.body) ? req.body._csrf : '';
+      req.body = { _csrf: req.get('x-csrf-token') || formToken || '' };
+      next();
+    },
+    auth.require('showcase'),
+    async (req, res, next) => {
+      try {
+        const r = await heroMedia.save(req.heroUpload);
+        if (r.error) return res.status(400).json({ error: r.error });
+        res.flash('ok', r.kind === 'video' ? 'Видео загружено: оно уже на главной' : 'Фото загружено: оно уже на главной');
+        res.json({ ok: true, id: r.id, kind: r.kind });
+      } catch (e) { next(e); }
+    });
+
+  router.post('/showcase/hero-media/remove', auth.require('showcase'), async (req, res, next) => {
+    try {
+      await heroMedia.remove();
+      res.flash('ok', 'Фон убран: на главной снова живой фон в цветах сезона');
       res.redirect('/admin/showcase');
     } catch (e) { next(e); }
   });

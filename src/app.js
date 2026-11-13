@@ -16,6 +16,7 @@ const { createPartner } = require('./partner');
 const { currentSeason, SEASONS } = require('./seasons');
 const { DEPARTMENTS } = require('./model');
 const { createMedia } = require('./media');
+const { createHeroMedia } = require('./heromedia');
 const { shopPage } = require('./shopviews');
 const { icon } = require('./icons');
 
@@ -34,17 +35,18 @@ function createApp(cfg, db, opts = {}) {
   const carts = createCarts(db);
   const tracker = createTracker(db, cfg);
   const media = createMedia(db, { partner });
+  const heroMedia = createHeroMedia({ db, settings });
   const writeoff = createWriteoff(db);
   const notifier = createNotifier({ db, cfg });
   const carriers = createCarriers(cfg, { fetchImpl: opts.fetchImpl });
   const payments = createPayments({ db, cfg, settings, notifier, fetchImpl: opts.fetchImpl });
-  const services = { cfg, db, settings, catalog, delivery, carts, tracker, media, writeoff, notifier, carriers, payments, partner };
+  const services = { cfg, db, settings, catalog, delivery, carts, tracker, media, heroMedia, writeoff, notifier, carriers, payments, partner };
   app.locals.services = services;
 
   // --- Заголовки безопасности. Скрипты и стили - только свои файлы (без inline).
   app.use((req, res, next) => {
     res.set({
-      'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; " +
+      'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; media-src 'self'; " +
         "connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
       'X-Content-Type-Options': 'nosniff',
       'X-Frame-Options': 'DENY',
@@ -58,6 +60,7 @@ function createApp(cfg, db, opts = {}) {
   app.get('/healthz', (req, res) => res.type('text').send('ok'));
   app.use('/static', express.static(path.join(__dirname, '..', 'public'), { maxAge: cfg.prod ? '7d' : 0, index: false }));
   media.mount(app);
+  heroMedia.mount(app);
   app.get('/favicon.ico', (req, res) => res.redirect(301, '/static/favicon.svg'));
   app.get('/robots.txt', (req, res) => {
     res.type('text').send(`User-agent: *\nDisallow: /admin\nDisallow: /cart\nDisallow: /checkout\nDisallow: /order\nDisallow: /api\n` +

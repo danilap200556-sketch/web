@@ -189,6 +189,15 @@ const SCHEMA = [
    )`,
   `CREATE INDEX IF NOT EXISTS payments_order_idx ON webshop.payments (order_id)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS payments_provider_uq ON webshop.payments (provider, provider_payment_id) WHERE provider_payment_id <> ''`,
+  // --- Фон первого экрана главной: своё видео или фото из админки (хранится одна запись - текущий фон) ---
+  `CREATE TABLE IF NOT EXISTS webshop.hero_media (
+     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+     kind TEXT NOT NULL CHECK (kind IN ('video', 'image')),
+     mime TEXT NOT NULL,
+     data BYTEA NOT NULL,
+     size INTEGER NOT NULL,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+   )`,
 ];
 
 module.exports = { SCHEMA };

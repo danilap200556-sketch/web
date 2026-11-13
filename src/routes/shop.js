@@ -27,6 +27,8 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner }, 
     }
     for (const m of heroPool) if (heroModels.length < 3 && !heroModels.includes(m)) heroModels.push(m);
     const hero = heroFor(season, ctx.settings);
+    // Фон первого экрана: своё видео или фото из админки («Витрина и каталог»), иначе живой фон в цветах сезона
+    const heroMedia = ctx.settings.heroMedia && ctx.settings.heroMedia.id ? ctx.settings.heroMedia : null;
     const newest = catalog.newest(8, (m) => m.cover);
     const onSale = catalog.onSale(8);
     const brands = [...catalog.models.filter((m) => m.inStock && m.brand).reduce((acc, m) => acc.set(m.brand, (acc.get(m.brand) || 0) + 1), new Map())]
@@ -62,40 +64,53 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner }, 
       <div class="rail__ctl">${link || ''}<div class="rail__nav"><button type="button" class="rail__btn" data-rail-prev aria-label="Назад">${icon('arrow-right')}</button><button type="button" class="rail__btn" data-rail-next aria-label="Вперёд">${icon('arrow-right')}</button></div></div></div>`;
 
     const body = html`
-    <section class="hero hero--v2">
-      <div class="hero__glow" aria-hidden="true"></div>
+    <section class="hero hero--v3${heroMedia ? ' hero--media' : ''}" data-hero>
+      <div class="hero__bg" aria-hidden="true">
+        <div class="hero__fallback"></div>
+        ${heroMedia && heroMedia.kind === 'image'
+          ? html`<img class="hero__photo" src="/media/hero/${heroMedia.id}" alt="" fetchpriority="high" decoding="async">`
+          : html`<canvas class="hero__gl" data-hero-gl></canvas>`}
+        ${heroMedia && heroMedia.kind === 'video' ? html`<video class="hero__video" muted loop playsinline preload="none" data-hero-video data-src="/media/hero/${heroMedia.id}"></video>` : ''}
+        <div class="hero__shade"></div>
+        <div class="hero__grain"></div>
+      </div>
       <div class="wrap hero__in">
-        <div class="hero__copy" data-reveal>
-          <p class="chip chip--season">${icon(SEASON_ICON[season])} ${hero.eyebrow} ${new Date().getFullYear()}</p>
-          <h1 class="hero__title">${hero.title}</h1>
+        <div class="hero__copy">
+          <p class="hero__eyebrow"><span class="hero__dot"></span>${hero.eyebrow} ${new Date().getFullYear()} · новая подборка</p>
+          <h1 class="hero__title" aria-label="${hero.title}">${hero.title.split(/\s+/).filter(Boolean).map((w) => html`<span class="w" aria-hidden="true"><span>${w}</span></span> `)}</h1>
           <p class="hero__text">${hero.text}</p>
+          <div class="hero__cta">
+            <a class="btn btn--light btn--lg" href="#picks" data-magnetic>Смотреть подборку ${icon('arrow-right')}</a>
+            <a class="btn btn--glass btn--lg" href="/catalog" data-magnetic>Весь каталог</a>
+          </div>
           <form class="hero__search" action="/catalog" method="get" role="search">
             ${icon('search')}
-            <input type="search" name="q" placeholder="Что ищете? Например, «new balance 9060»" autocomplete="off" aria-label="Поиск по магазину" data-search-input data-search-inline>
-            <button class="btn" type="submit">Найти</button>
+            <input type="search" name="q" placeholder="Модель, бренд или артикул" autocomplete="off" aria-label="Поиск по магазину" data-search-input data-search-inline>
+            <button class="btn btn--sm" type="submit">Найти</button>
           </form>
-          <div class="hero__quick">
-            <span>Часто ищут:</span>
-            ${brands.slice(0, 4).map(([b]) => html`<a href="/catalog?brand=${encodeURIComponent(b)}">${b}</a>`)}
-          </div>
-          <dl class="hero__stats">
-            <div><dt>${num(inStockCount)}</dt><dd>моделей в наличии</dd></div>
-            <div><dt>7 дней</dt><dd>на обмен и возврат</dd></div>
-            <div><dt>СБП</dt><dd>карта и перевод</dd></div>
-          </dl>
         </div>
-        <div class="hero__stage" aria-hidden="${heroModels.length ? 'false' : 'true'}" data-reveal="scale">
-          <div class="stage__bg"></div>
-          <span class="stage__word" aria-hidden="true" data-parallax="-0.06">${SEASON_WORD[season]}</span>
-          ${heroModels.map((m, i) => html`<a class="stage__item stage__item--${i + 1}" href="/p/${m.slug}" tabindex="0" data-parallax="${[-0.05, 0.09, -0.12][i]}">
-            <img src="${photoUrl(m.cover, 640)}" alt="${m.title}" width="640" height="640" ${i === 0 ? raw('fetchpriority="high"') : raw('loading="lazy"')}>
-            <span class="stage__tag"><b>${m.brand} ${m.model}</b><i>${rub(m.price)}</i></span>
-          </a>`)}
-          <span class="stage__chip stage__chip--a">${icon('shield')} Оригинал</span>
-          <span class="stage__chip stage__chip--b">${icon('store')} Примерка при самовывозе</span>
+        ${heroModels.length ? html`<div class="spot" data-spot>
+          <span class="spot__word" aria-hidden="true" data-parallax="-0.06">${SEASON_WORD[season]}</span>
+          <div class="spot__card" data-tilt>
+            <div class="spot__bars">${heroModels.map((m, i) => html`<button type="button" class="spot__bar${i === 0 ? ' is-active' : ''}" data-spot-go="${i}" aria-label="${m.brand} ${m.model}: модель ${i + 1} из ${heroModels.length}"><i></i></button>`)}</div>
+            ${heroModels.map((m, i) => html`<a class="spot__item${i === 0 ? ' is-active' : ''}" href="/p/${m.slug}" data-spot-item ${i ? raw('tabindex="-1" aria-hidden="true"') : ''}>
+              <img src="${photoUrl(m.cover, 640)}" alt="${m.title}" width="640" height="640" ${i === 0 ? raw('fetchpriority="high"') : raw('loading="lazy"')}>
+              <span class="spot__info"><small>${m.brand}${m.type ? ' · ' + m.type : ''}</small><b>${m.model || m.title}</b><span>${rub(m.price)}</span></span>
+              <span class="spot__go">${icon('arrow-up-right')}</span>
+            </a>`)}
+          </div>
+        </div>` : ''}
+      </div>
+      <div class="hero__foot">
+        <div class="wrap hero__foot-in">
+          <dl class="hero__stats">
+            <div><dt data-count="${inStockCount}">${num(inStockCount)}</dt><dd>моделей в наличии</dd></div>
+            <div><dt>7 дней</dt><dd>на обмен и возврат</dd></div>
+            ${ctx.freeFrom > 0 ? html`<div><dt>${rub(ctx.freeFrom)}</dt><dd>бесплатная доставка от</dd></div>` : html`<div><dt>СБП</dt><dd>карта и перевод</dd></div>`}
+          </dl>
+          <a class="hero__scroll" href="#picks" aria-label="К подборке сезона"><span>Листайте</span><i></i></a>
         </div>
       </div>
-      <a class="hero__scroll" href="#picks" aria-label="К подборке сезона"><span></span></a>
     </section>
 
     ${marquee.length ? html`<div class="marquee" aria-label="Бренды">
@@ -127,7 +142,7 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner }, 
 
     <section class="block block--finder" data-reveal>
       <div class="wrap">
-        <div class="finder" data-finder>
+        <div class="finder" data-finder data-glow>
           <div class="finder__copy">
             <p class="eyebrow">Подбор пары</p>
             <h2>Выберите размер и тип,<br>остальное найдём</h2>

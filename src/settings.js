@@ -12,6 +12,7 @@ function defaults(cfg) {
     telegram: '',
     seasonMode: 'auto',           // auto | winter | spring | summer | autumn
     heroOverrides: {},            // { autumn: { eyebrow, title, text } }
+    heroMedia: null,              // фон первого экрана: { id, kind: 'video' | 'image', mime, size } (webshop.hero_media), иначе живой фон
     showNoteSizes: false,         // продавать ли размеры с пометками в артикуле (без коробки, один кроссовок, брак) как обычные
     requirePhoto: true,           // не показывать модели без фото
     electronicsTeaser: true,      // плашка «скоро электроника» на главной

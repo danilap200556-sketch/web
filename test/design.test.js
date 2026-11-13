@@ -23,13 +23,17 @@ test.describe('оформление v2: главная, корзина-пане�
     assert.match(t, /\/static\/js\/fx\.js\?v=[^"]+" defer/);
     assert.match(t, /data-progress/);
     assert.match(t, /id="minicart"/);
-    assert.match(t, /hero hero--v2/);
+    assert.match(t, /hero hero--v3/);
+    assert.match(t, /\/static\/css\/v3\.css\?v=/);
+    assert.match(t, /\/static\/js\/hero\.js\?v=[^"]+" defer/);
+    assert.match(t, /<canvas class="hero__gl" data-hero-gl>/, 'без своего видео и фото на первом экране живой фон');
+    assert.match(t, /data-spot/);
     assert.match(t, /class="marquee"/);
     assert.match(t, /data-rail/);
     assert.match(t, /data-rail-prev/);
     assert.match(t, /data-rail-next/);
     assert.match(t, /foot__word/);
-    for (const f of ['css/design.css', 'js/fx.js', 'js/boot.js']) assert.equal((await client(shop.base).get('/static/' + f)).status, 200, f);
+    for (const f of ['css/design.css', 'css/v3.css', 'js/fx.js', 'js/hero.js', 'js/boot.js', 'img/grain.png', 'img/arrow.svg']) assert.equal((await client(shop.base).get('/static/' + f)).status, 200, f);
   });
 
   test('безопасная политика: ни одного inline-стиля и inline-скрипта (кроме разметки товара)', async () => {

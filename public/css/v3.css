@@ -242,6 +242,7 @@ html:not(.js) .spot__item ~ .spot__item { display: none; }
   .hero--v3 .hero__in { grid-template-columns: minmax(0, 1fr); gap: 40px; }
   .spot { justify-self: center; width: min(100%, 400px); }
   .hero__shade { background: linear-gradient(180deg, rgb(7 7 8 / .55), rgb(7 7 8 / .3) 40%, rgb(7 7 8 / .85)); }
+  .hero--media .hero__shade { background: linear-gradient(180deg, rgb(7 7 8 / .72), rgb(7 7 8 / .58) 45%, rgb(7 7 8 / .9)); }
   .hero__foot-in { flex-direction: column; align-items: stretch; }
   .hero--v3 .hero__scroll { display: none; }
   .usp__item + .usp__item { border-left: 0; border-top: 1px solid var(--line); }

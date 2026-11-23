@@ -24,7 +24,7 @@ test.describe('фон первого экрана: живой фон, своё �
 
   test('без своего файла: живой фон, витрина моделей, CSP разрешает видео со своего адреса', async () => {
     const r = await client(shop.base).get('/');
-    assert.match(r.text, /hero hero--v3"/);
+    assert.match(r.text, /class="slide slide--season" data-hero/);
     assert.match(r.text, /data-hero-gl/);
     assert.doesNotMatch(r.text, /data-hero-video|hero__photo/);
     assert.match(r.text, /class="spot__item is-active"/);

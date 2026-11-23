@@ -1,4 +1,4 @@
-/* Оформление v3: живой фон первого экрана (WebGL «жидкий шёлк» в цветах сезона или своё видео), витрина моделей
+/* Первый слайд баннера: живой фон (WebGL «жидкий шёлк» в цветах сезона или своё видео), витрина моделей
    с 3D-наклоном, счётчики, «магнитные» кнопки, подсветка за курсором и перелёт фото товара между страницами.
    Без библиотек. При prefers-reduced-motion фон рисуется одним неподвижным кадром, видео не запускается. */
 (function () {
@@ -213,7 +213,7 @@
   /* ---------- Перелёт фото: карточка товара -> страница модели (View Transitions между страницами) ---------- */
   if (!reduce) {
     document.addEventListener('click', (e) => {
-      const a = e.target.closest && e.target.closest('a.card, a.spot__item');
+      const a = e.target.closest && e.target.closest('a.card__a, a.spot__item');
       if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
       const img = a.querySelector('.card__img, img');
       if (img) img.style.viewTransitionName = 'pimg';

@@ -17,7 +17,7 @@ const { currentSeason, SEASONS } = require('./seasons');
 const { DEPARTMENTS } = require('./model');
 const { createMedia } = require('./media');
 const { createHeroMedia } = require('./heromedia');
-const { shopPage } = require('./shopviews');
+const { shopPage, favSlugs } = require('./shopviews');
 const { icon } = require('./icons');
 
 const ASSET_V = Date.now().toString(36);
@@ -63,7 +63,7 @@ function createApp(cfg, db, opts = {}) {
   heroMedia.mount(app);
   app.get('/favicon.ico', (req, res) => res.redirect(301, '/static/favicon.svg'));
   app.get('/robots.txt', (req, res) => {
-    res.type('text').send(`User-agent: *\nDisallow: /admin\nDisallow: /cart\nDisallow: /checkout\nDisallow: /order\nDisallow: /api\n` +
+    res.type('text').send(`User-agent: *\nDisallow: /admin\nDisallow: /cart\nDisallow: /checkout\nDisallow: /favorites\nDisallow: /order\nDisallow: /api\n` +
       (cfg.publicUrl ? `Sitemap: ${cfg.publicUrl}/sitemap.xml\n` : ''));
   });
 
@@ -111,6 +111,8 @@ function createApp(cfg, db, opts = {}) {
         saleCount,
         dept: String(req.query.dept || ''),
         cartCount: Math.max(0, Math.min(99, parseInt(req.cookies[cartCountName], 10) || 0)),
+        favCount: favSlugs(req).filter((x) => catalog.bySlug.has(x)).length,
+        navActive: req.query.sale ? 'sale' : req.query.sort === 'new' && !req.query.dept ? 'new' : '',
         freeFrom: frees.length ? Math.min(...frees) : 0,
         baseUrl,
         assetV: ASSET_V,

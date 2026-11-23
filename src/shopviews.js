@@ -36,28 +36,46 @@ function badgeOf(m) {
   return null;
 }
 
-function card(m, { priority = false } = {}) {
+// Карточка: фото на светлой плашке, ярлык, «в избранное», размеры в наличии всплывают при наведении
+function card(m, { priority = false, fav = false } = {}) {
   const b = badgeOf(m);
   const second = m.photos[1];
   const sizes = sizeRange(m);
-  return html`<a class="card${m.inStock ? '' : ' is-out'}" href="/p/${m.slug}" data-model="${m.key}">
-    <div class="card__media">
-      ${m.cover ? html`<img class="card__img" src="${photoUrl(m.cover, 640)}" srcset="${photoUrl(m.cover, 360)} 360w, ${photoUrl(m.cover, 640)} 640w"
-        sizes="(max-width: 720px) 46vw, (max-width: 1100px) 30vw, 300px" alt="${m.title}" width="640" height="640"
-        ${priority ? raw('fetchpriority="high"') : raw('loading="lazy" decoding="async"')}>` : ''}
-      ${second ? html`<img class="card__img card__img--alt" src="${photoUrl(second, 640)}" alt="" width="640" height="640" loading="lazy" decoding="async">` : ''}
-      ${b ? html`<span class="badge badge--${b.kind}">${b.text}</span>` : ''}
-    </div>
-    <div class="card__body">
-      <div class="card__meta">${[m.brand, m.type].filter(Boolean).join(' · ')}</div>
-      <h3 class="card__title">${m.model || m.title}</h3>
-      ${m.colorway ? html`<div class="card__color">${m.colorway}</div>` : ''}
-      <div class="card__foot">
-        <span class="card__price">${priceBlock(m)}</span>
-        ${sizes ? html`<span class="card__sizes">${sizes}</span>` : ''}
+  const quick = [...new Set(m.sizes.filter((x) => x.qty > 0 && x.size).map((x) => x.size))];
+  return html`<div class="card${m.inStock ? '' : ' is-out'}" data-model="${m.key}">
+    <a class="card__a" href="/p/${m.slug}">
+      <div class="card__media">
+        ${m.cover ? html`<img class="card__img" src="${photoUrl(m.cover, 640)}" srcset="${photoUrl(m.cover, 360)} 360w, ${photoUrl(m.cover, 640)} 640w"
+          sizes="(max-width: 720px) 46vw, (max-width: 1100px) 30vw, 300px" alt="${m.title}" width="640" height="640"
+          ${priority ? raw('fetchpriority="high"') : raw('loading="lazy" decoding="async"')}>` : ''}
+        ${second ? html`<img class="card__img card__img--alt" src="${photoUrl(second, 640)}" alt="" width="640" height="640" loading="lazy" decoding="async">` : ''}
+        ${b ? html`<span class="badge badge--${b.kind}">${b.text}</span>` : ''}
+        ${quick.length > 1 ? html`<span class="card__quick" aria-hidden="true">${quick.slice(0, 9).map((x) => html`<i>${x}</i>`)}${quick.length > 9 ? html`<i>+${quick.length - 9}</i>` : ''}</span>` : ''}
       </div>
-    </div>
-  </a>`;
+      <div class="card__body">
+        <div class="card__stock${m.inStock ? ' is-in' : ''}">${m.inStock ? 'В наличии' : 'Нет в наличии'}</div>
+        <div class="card__meta">${[m.brand, m.type].filter(Boolean).join(' · ')}</div>
+        <h3 class="card__title">${m.model || m.title}</h3>
+        ${m.colorway ? html`<div class="card__color">${m.colorway}</div>` : ''}
+        <div class="card__foot">
+          <span class="card__price">${priceBlock(m)}</span>
+          ${sizes ? html`<span class="card__sizes">${sizes}</span>` : ''}
+        </div>
+      </div>
+    </a>
+    ${favBtn(m, fav)}
+  </div>`;
+}
+
+// Кнопка «в избранное». Избранное хранится в cookie fav (адреса моделей через «.»), его ведёт v4.js
+function favBtn(m, on, cls = 'fav') {
+  return html`<button class="${cls}${on ? ' is-on' : ''}" type="button" data-fav="${m.slug}" aria-pressed="${on ? 'true' : 'false'}" aria-label="${on ? 'Убрать из избранного' : 'В избранное'}">${icon('heart')}</button>`;
+}
+
+// Избранное из cookie: только похожие на адрес модели значения, не больше 60
+function favSlugs(req) {
+  const raw0 = (req.cookies && req.cookies.fav) || '';
+  return [...new Set(String(raw0).split('.').filter((x) => /^[a-z0-9-]{1,120}$/.test(x)))].slice(0, 60);
 }
 
 function pagination(base, page, pages) {
@@ -81,14 +99,37 @@ function pagination(base, page, pages) {
   </nav>`;
 }
 
-function navDepts(ctx) {
+// Строка разделов: скидки, новинки, отделы, бренды
+function navLinks(ctx) {
   const out = [];
+  if (ctx.saleCount) out.push(html`<a class="nav__link nav__link--hot${ctx.navActive === 'sale' ? ' is-active' : ''}" href="/catalog?sale=1&amp;sort=discount">Скидки</a>`);
+  out.push(html`<a class="nav__link${ctx.navActive === 'new' ? ' is-active' : ''}" href="/catalog?sort=new">Новинки</a>`);
   for (const d of Object.values(DEPARTMENTS)) {
     const has = ctx.deptCounts[d.slug] > 0;
     if (has) out.push(html`<a class="nav__link${ctx.dept === d.slug ? ' is-active' : ''}" href="/catalog?dept=${d.slug}">${d.title}</a>`);
     else if (d.slug === 'elektronika' && ctx.settings.electronicsTeaser) out.push(html`<span class="nav__link nav__link--soon" title="Скоро в магазине">${d.title}<small>скоро</small></span>`);
   }
+  out.push(html`<a class="nav__link${ctx.navActive === 'brands' ? ' is-active' : ''}" href="/brands">Бренды</a>`);
+  out.push(html`<a class="nav__link" href="/delivery">Доставка</a>`);
   return out;
+}
+
+// Логотип словом: название магазина жирными заглавными, вторая половина длинного слова - контуром
+function logoWord(name) {
+  const n = String(name || '').trim();
+  const parts = n.split(/\s+/);
+  if (parts.length > 1) return html`<span class="logo__text">${parts[0]}<i>${parts.slice(1).join(' ')}</i></span>`;
+  if (n.length >= 8) { const k = Math.ceil(n.length / 2); return html`<span class="logo__text">${n.slice(0, k)}<i>${n.slice(k)}</i></span>`; }
+  return html`<span class="logo__text">${n}</span>`;
+}
+
+// Ссылка на Telegram из настроек: @имя, t.me/имя или полный адрес
+function telegramUrl(v) {
+  const t = String(v || '').trim();
+  if (!t) return '';
+  if (/^https:\/\/(t\.me|telegram\.me)\//i.test(t)) return t;
+  const m = /^(?:@|(?:https?:\/\/)?(?:t\.me|telegram\.me)\/)?([A-Za-z0-9_]{4,64})$/.exec(t);
+  return m ? `https://t.me/${m[1]}` : '';
 }
 
 // Оболочка публичной страницы
@@ -97,6 +138,8 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
   const fullTitle = title ? `${title} - ${s.shopName}` : `${s.shopName}: кроссовки, одежда и аксессуары`;
   const desc = description || `${s.shopName}: оригинальные кроссовки, кеды, ботинки и одежда. Доставка по России, самовывоз, примерка.`;
   const season = SEASONS[ctx.season];
+  const tel = String(s.phone || '').replace(/[^+\d]/g, '');
+  const tg = telegramUrl(s.telegram);
   return html`<!doctype html>
 <html lang="ru" data-season="${ctx.season}">
 <head>
@@ -110,43 +153,60 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
   <meta property="og:title" content="${fullTitle}">
   <meta property="og:description" content="${desc}">
   ${og && og.image ? html`<meta property="og:image" content="${ctx.baseUrl}${og.image}">` : ''}
-  <meta name="theme-color" content="#0b0b0c">
+  <meta name="theme-color" content="#000000">
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="preload" href="/static/fonts/inter-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/static/css/shop.css?v=${ctx.assetV}">
   <link rel="stylesheet" href="/static/css/design.css?v=${ctx.assetV}">
-  <link rel="stylesheet" href="/static/css/v3.css?v=${ctx.assetV}">
+  <link rel="stylesheet" href="/static/css/v4.css?v=${ctx.assetV}">
   <script src="/static/js/boot.js?v=${ctx.assetV}"></script>
   ${jsonLd ? html`<script type="application/ld+json">${raw(JSON.stringify(jsonLd).replace(/</g, '\\u003c'))}</script>` : ''}
 </head>
 <body class="${bodyClass}">
   ${sprite()}
   <div class="progress" data-progress aria-hidden="true"></div>
-  <div class="announce">
+  <div class="announce" data-ticker>
     <div class="wrap announce__in">
-      <span>${icon(SEASON_ICON[ctx.season])} ${season.title}: новая подборка уже на витрине</span>
-      <span class="announce__sep">Бесплатная доставка от ${rub(ctx.freeFrom)}</span>
-      <span class="announce__sep">Оригинал · Самовывоз с примеркой</span>
+      <button class="announce__arrow" type="button" data-ticker-prev aria-label="Предыдущее сообщение">${icon('chevron-left')}</button>
+      <div class="announce__msgs" aria-live="polite">
+        <span class="announce__msg is-on">Только оригинальная продукция</span>
+        ${ctx.freeFrom > 0 ? html`<span class="announce__msg">Бесплатная доставка от ${rub(ctx.freeFrom)}</span>` : ''}
+        <span class="announce__msg">${icon(SEASON_ICON[ctx.season])} ${season.title}: новая подборка уже на витрине</span>
+        <span class="announce__msg">Самовывоз с примеркой · обмен и возврат 7 дней</span>
+      </div>
+      <button class="announce__arrow" type="button" data-ticker-next aria-label="Следующее сообщение">${icon('chevron-right')}</button>
+    </div>
+  </div>
+  <div class="util">
+    <div class="wrap util__in">
+      <div class="util__group">
+        ${s.phone ? html`<a href="tel:${tel}">${icon('phone')}${s.phone}</a>` : ''}
+        ${tg ? html`<a href="${tg}" rel="noopener" target="_blank">${icon('send')}Telegram</a>` : ''}
+        <a href="/delivery">${icon('truck')}Доставка и оплата</a>
+        <a href="/delivery#return">${icon('return')}Обмен и возврат</a>
+      </div>
+      <div class="util__group">
+        ${s.hours ? html`<span>${icon('clock')}${s.hours}</span>` : ''}
+        ${s.address ? html`<span>${icon('pin')}${s.address}</span>` : ''}
+      </div>
     </div>
   </div>
   <header class="head" id="head">
     <div class="wrap head__in">
-      <button class="head__burger iconbtn" type="button" data-nav-toggle aria-label="Меню" aria-expanded="false" aria-controls="drawer">${icon('sliders')}</button>
-      <a class="logo" href="/" aria-label="${s.shopName}">
-        <svg class="logo__mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M3 21c0-2 1-3 3-3.4l4.6-.9c1.6-.3 2.7-1.3 3.4-2.8l1-2.1 4.2 2.2c1.6.8 3.2 1.4 4.8 1.8 2.5.6 4 1.6 4 3.7V24H3v-3Z"/><path class="logo__sole" d="M3 26h26"/></svg>
-        <span class="logo__text">${s.shopName}</span>
-      </a>
-      <nav class="nav" id="nav" aria-label="Разделы">
-        ${navDepts(ctx)}
-        ${ctx.saleCount ? html`<a class="nav__link nav__link--hot" href="/catalog?sale=1&amp;sort=discount">Скидки</a>` : ''}
-        <a class="nav__link" href="/catalog?sort=new">Новинки</a>
-        <a class="nav__link" href="/delivery">Доставка и оплата</a>
-      </nav>
+      <button class="head__burger iconbtn" type="button" data-nav-toggle aria-label="Меню" aria-expanded="false" aria-controls="drawer">${icon('menu')}</button>
+      <a class="logo" href="/" aria-label="${s.shopName}">${logoWord(s.shopName)}</a>
+      <button class="headsearch" type="button" data-search-open aria-label="Поиск">${icon('search')}<span>Поиск: модель, бренд или артикул</span><kbd>/</kbd></button>
       <div class="head__tools">
-        <button class="iconbtn" type="button" data-search-open aria-label="Поиск">${icon('search')}</button>
-        <a class="iconbtn cartbtn" href="/cart" aria-label="Корзина">${icon('bag')}<span class="cartbtn__n${ctx.cartCount ? '' : ' is-empty'}" data-cart-count>${ctx.cartCount || ''}</span></a>
+        <button class="iconbtn head__find" type="button" data-search-open aria-label="Поиск">${icon('search')}</button>
+        <a class="iconbtn favbtn" href="/favorites" aria-label="Избранное">${icon('heart')}<span class="cartbtn__n${ctx.favCount ? '' : ' is-empty'}" data-fav-count>${ctx.favCount || ''}</span></a>
+        <a class="iconbtn cartbtn" href="/cart" aria-label="Корзина">${icon('bag')}<span class="cartbtn__n${ctx.cartCount ? '' : ' is-empty'}" data-cart-count>${ctx.cartCount || ''}</span><span class="cartbtn__t">Корзина</span></a>
       </div>
     </div>
+    <nav class="nav" id="nav" aria-label="Разделы">
+      <div class="wrap nav__in">
+        ${navLinks(ctx)}
+      </div>
+    </nav>
     <div class="search" id="search" hidden>
       <div class="wrap">
         <form class="search__form" action="/catalog" method="get" role="search">
@@ -162,14 +222,12 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
     <div class="drawer__scrim" data-drawer-close></div>
     <aside class="drawer__panel" role="dialog" aria-modal="true" aria-label="Меню">
       <div class="drawer__top">
-        <a class="logo" href="/" aria-label="${s.shopName}"><svg class="logo__mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M3 21c0-2 1-3 3-3.4l4.6-.9c1.6-.3 2.7-1.3 3.4-2.8l1-2.1 4.2 2.2c1.6.8 3.2 1.4 4.8 1.8 2.5.6 4 1.6 4 3.7V24H3v-3Z"/><path class="logo__sole" d="M3 26h26"/></svg><span class="logo__text">${s.shopName}</span></a>
+        <a class="logo" href="/" aria-label="${s.shopName}">${logoWord(s.shopName)}</a>
         <button class="iconbtn" type="button" data-drawer-close aria-label="Закрыть меню">${icon('close')}</button>
       </div>
       <nav class="drawer__nav" aria-label="Разделы">
-        ${navDepts(ctx)}
-        ${ctx.saleCount ? html`<a class="nav__link nav__link--hot" href="/catalog?sale=1&amp;sort=discount">Скидки</a>` : ''}
-        <a class="nav__link" href="/catalog?sort=new">Новинки</a>
-        <a class="nav__link" href="/delivery">Доставка и оплата</a>
+        ${navLinks(ctx)}
+        <a class="nav__link" href="/favorites">Избранное${ctx.favCount ? html` <small class="drawer__badge">${ctx.favCount}</small>` : ''}</a>
         <a class="nav__link" href="/cart">Корзина${ctx.cartCount ? html` <small class="drawer__badge">${ctx.cartCount}</small>` : ''}</a>
       </nav>
       <div class="drawer__foot">
@@ -194,17 +252,26 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
     </aside>
   </div>
   <main id="main">${body}</main>
+  <section class="subscribe">
+    <div class="wrap subscribe__in">
+      <div><b>Новинки и скидки первыми</b><span>Подпишитесь на наш Telegram: поступления, размеры и закрытые распродажи.</span></div>
+      ${tg ? html`<a class="btn btn--light" href="${tg}" rel="noopener" target="_blank">${icon('send')} Подписаться</a>` : html`<a class="btn btn--light" href="/catalog?sort=new">Смотреть новинки ${icon('arrow-right')}</a>`}
+    </div>
+  </section>
   <footer class="foot">
     <div class="wrap foot__grid">
-      <div>
-        <div class="logo logo--foot"><span class="logo__text">${s.shopName}</span></div>
+      <div class="foot__brand">
+        <a class="logo logo--foot" href="/" aria-label="${s.shopName}">${logoWord(s.shopName)}</a>
         <p class="foot__lead">Оригинальные кроссовки, кеды, ботинки и одежда. Доставляем по всей России, примерка при самовывозе.</p>
+        <ul class="foot__pay" aria-label="Способы оплаты"><li>СБП</li><li>МИР</li><li>Visa</li><li>Mastercard</li><li>Перевод</li></ul>
       </div>
       <div>
-        <h4>Магазин</h4>
+        <h4>Каталог</h4>
         <ul>
           ${Object.values(DEPARTMENTS).filter((d) => ctx.deptCounts[d.slug] > 0).map((d) => html`<li><a href="/catalog?dept=${d.slug}">${d.title}</a></li>`)}
           <li><a href="/catalog?sort=new">Новинки</a></li>
+          ${ctx.saleCount ? html`<li><a href="/catalog?sale=1&amp;sort=discount">Скидки</a></li>` : ''}
+          <li><a href="/brands">Бренды</a></li>
         </ul>
       </div>
       <div>
@@ -212,14 +279,16 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
         <ul>
           <li><a href="/delivery">Доставка и оплата</a></li>
           <li><a href="/delivery#return">Обмен и возврат</a></li>
+          <li><a href="/favorites">Избранное</a></li>
           <li><a href="/cart">Корзина</a></li>
         </ul>
       </div>
       <div>
         <h4>Контакты</h4>
         <ul class="foot__contacts">
-          <li>${icon('phone')}<a href="tel:${String(s.phone).replace(/[^+\d]/g, '')}">${s.phone}</a></li>
+          <li>${icon('phone')}<a href="tel:${tel}">${s.phone}</a></li>
           <li>${icon('mail')}<a href="mailto:${s.email}">${s.email}</a></li>
+          ${tg ? html`<li>${icon('send')}<a href="${tg}" rel="noopener" target="_blank">Telegram</a></li>` : ''}
           <li>${icon('pin')}<span>${s.address}</span></li>
           <li>${icon('clock')}<span>${s.hours}</span></li>
         </ul>
@@ -239,10 +308,11 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
   <script src="/static/js/shop.js?v=${ctx.assetV}" defer></script>
   <script src="/static/js/fx.js?v=${ctx.assetV}" defer></script>
   <script src="/static/js/hero.js?v=${ctx.assetV}" defer></script>
+  <script src="/static/js/v4.js?v=${ctx.assetV}" defer></script>
 </body>
 </html>`;
 }
 
 const countLabel = (n) => `${n} ${plural(n, 'модель', 'модели', 'моделей')}`;
 
-module.exports = { shopPage, card, pagination, photoUrl, sizeRange, badgeOf, priceBlock, countLabel, SEASON_ICON, esc };
+module.exports = { shopPage, card, favBtn, favSlugs, telegramUrl, pagination, photoUrl, sizeRange, badgeOf, priceBlock, countLabel, SEASON_ICON, esc };

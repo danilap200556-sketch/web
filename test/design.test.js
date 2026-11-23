@@ -23,8 +23,13 @@ test.describe('оформление v2: главная, корзина-пане�
     assert.match(t, /\/static\/js\/fx\.js\?v=[^"]+" defer/);
     assert.match(t, /data-progress/);
     assert.match(t, /id="minicart"/);
-    assert.match(t, /hero hero--v3/);
-    assert.match(t, /\/static\/css\/v3\.css\?v=/);
+    assert.match(t, /class="slide slide--season" data-hero/);
+    assert.match(t, /\/static\/css\/v4\.css\?v=/);
+    assert.doesNotMatch(t, /v3\.css/);
+    assert.match(t, /\/static\/js\/v4\.js\?v=[^"]+" defer/);
+    assert.match(t, /data-banner-track/);
+    assert.match(t, /data-ticker/);
+    assert.match(t, /data-search-open/);
     assert.match(t, /\/static\/js\/hero\.js\?v=[^"]+" defer/);
     assert.match(t, /<canvas class="hero__gl" data-hero-gl>/, 'без своего видео и фото на первом экране живой фон');
     assert.match(t, /data-spot/);
@@ -33,7 +38,7 @@ test.describe('оформление v2: главная, корзина-пане�
     assert.match(t, /data-rail-prev/);
     assert.match(t, /data-rail-next/);
     assert.match(t, /foot__word/);
-    for (const f of ['css/design.css', 'css/v3.css', 'js/fx.js', 'js/hero.js', 'js/boot.js', 'img/grain.png', 'img/arrow.svg']) assert.equal((await client(shop.base).get('/static/' + f)).status, 200, f);
+    for (const f of ['css/design.css', 'css/v4.css', 'js/fx.js', 'js/hero.js', 'js/v4.js', 'js/boot.js', 'img/grain.png', 'img/arrow.svg']) assert.equal((await client(shop.base).get('/static/' + f)).status, 200, f);
   });
 
   test('безопасная политика: ни одного inline-стиля и inline-скрипта (кроме разметки товара)', async () => {
@@ -118,5 +123,35 @@ test.describe('оформление v2: главная, корзина-пане�
     assert.match(t, /С этим часто берут/);
     const e = client(shop.base);
     assert.match((await e.get('/cart')).text, /Что сейчас в тренде/, 'в пустой корзине подборка новинок');
+  });
+
+  test('избранное: сердечко на карточке, страница по cookie, мусор в cookie не ломает страницу', async () => {
+    const home = (await client(shop.base).get('/')).text;
+    const slugs = [...home.matchAll(/data-fav="([a-z0-9-]+)"/g)].map((m) => m[1]);
+    assert.ok(slugs.length >= 2, 'у карточек есть кнопка «в избранное»');
+    assert.doesNotMatch(home, /<a [^>]*class="card[^"]*"[^>]*>(?:(?!<\/a>)[\s\S])*<button/, 'кнопка не внутри ссылки');
+    const empty = await client(shop.base).get('/favorites');
+    assert.equal(empty.status, 200);
+    assert.match(empty.text, /Здесь появятся модели/);
+    assert.match(empty.text, /noindex/);
+    const c = client(shop.base);
+    c.jar.set('fav', `${slugs[0]}.${slugs[1]}.nope-missing.<script>`);
+    const t = (await c.get('/favorites')).text;
+    assert.match(t, /2 модели/);
+    assert.equal((t.match(/class="fav is-on"/g) || []).length, 2);
+    assert.doesNotMatch(t, /<script>/);
+    assert.match(t, /data-fav-count>2</, 'счётчик в шапке считает только существующие модели');
+    const pdp = (await c.get('/p/' + slugs[0])).text;
+    assert.match(pdp, /class="fav fav--lg is-on"/);
+  });
+
+  test('бренды: страница по алфавиту и ссылка в шапке и в sitemap', async () => {
+    const r = await client(shop.base).get('/brands');
+    assert.equal(r.status, 200);
+    assert.match(r.text, /<h1>Бренды<\/h1>/);
+    assert.match(r.text, /href="\/catalog\?brand=Nike"/);
+    assert.match(r.text, /id="b-N"/);
+    assert.match((await client(shop.base).get('/')).text, /class="nav__link" href="\/brands"/);
+    assert.match((await client(shop.base).get('/sitemap.xml')).text, /\/brands</);
   });
 });

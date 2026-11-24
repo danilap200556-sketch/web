@@ -2,12 +2,13 @@
 const { hashPassword } = require('./security');
 
 // Первый запуск: способы доставки по умолчанию и владелец админки из ADMIN_USER / ADMIN_PASSWORD
-async function bootstrap({ db, cfg, delivery, carts, writeoff, notifier, partner }) {
+async function bootstrap({ db, cfg, delivery, carts, writeoff, notifier, partner, bot }) {
   await delivery.ensureDefaults();
   await writeoff.sync();   // очередь списания: заказы «Собран» встают в неё, отменённые снимаются
   writeoff.start();
   partner.start();         // каталог электроники партнёра: обход их сайта в фоне, если включён
   notifier.start();        // отправка уведомлений о заказах (Telegram), если он настроен
+  if (cfg.notify.botPolling) bot.start();   // бот принимает сообщения покупателей (вход по коду, команды), если настроен токен
   if (cfg.notify.telegramToken && !cfg.notify.telegramChatIds.length) console.warn('[!] Задан TELEGRAM_BOT_TOKEN, но нет TELEGRAM_CHAT_ID: уведомления не отправляются.');
   carts.prune().catch(() => {});
   const { rows } = await db.query('SELECT COUNT(*)::int AS n FROM webshop.admin_users');

@@ -92,6 +92,14 @@ function navDepts(ctx) {
 }
 
 // Оболочка публичной страницы
+// Значок входа в шапке: «Войти» или «Личный кабинет»; пока вход не настроен (ни SMS, ни бота), его нет
+function accountLink(ctx) {
+  if (!ctx.loginEnabled && !ctx.customer) return '';
+  return ctx.customer
+    ? html`<a class="iconbtn" href="/account" aria-label="Личный кабинет">${icon('user')}</a>`
+    : html`<a class="iconbtn" href="/login" aria-label="Войти">${icon('user')}</a>`;
+}
+
 function shopPage(ctx, { title, description = '', canonical = '', og = null, body, bodyClass = '', noindex = false, jsonLd = null }) {
   const s = ctx.settings;
   const fullTitle = title ? `${title} - ${s.shopName}` : `${s.shopName}: кроссовки, одежда и аксессуары`;
@@ -116,6 +124,7 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
   <link rel="stylesheet" href="/static/css/shop.css?v=${ctx.assetV}">
   <link rel="stylesheet" href="/static/css/design.css?v=${ctx.assetV}">
   <link rel="stylesheet" href="/static/css/v3.css?v=${ctx.assetV}">
+  <link rel="stylesheet" href="/static/css/account.css?v=${ctx.assetV}">
   <script src="/static/js/boot.js?v=${ctx.assetV}"></script>
   ${jsonLd ? html`<script type="application/ld+json">${raw(JSON.stringify(jsonLd).replace(/</g, '\\u003c'))}</script>` : ''}
 </head>
@@ -144,6 +153,7 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
       </nav>
       <div class="head__tools">
         <button class="iconbtn" type="button" data-search-open aria-label="Поиск">${icon('search')}</button>
+        ${accountLink(ctx)}
         <a class="iconbtn cartbtn" href="/cart" aria-label="Корзина">${icon('bag')}<span class="cartbtn__n${ctx.cartCount ? '' : ' is-empty'}" data-cart-count>${ctx.cartCount || ''}</span></a>
       </div>
     </div>
@@ -170,6 +180,7 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
         ${ctx.saleCount ? html`<a class="nav__link nav__link--hot" href="/catalog?sale=1&amp;sort=discount">Скидки</a>` : ''}
         <a class="nav__link" href="/catalog?sort=new">Новинки</a>
         <a class="nav__link" href="/delivery">Доставка и оплата</a>
+        ${ctx.loginEnabled || ctx.customer ? html`<a class="nav__link" href="${ctx.customer ? '/account' : '/login'}">${ctx.customer ? 'Личный кабинет' : 'Войти'}</a>` : ''}
         <a class="nav__link" href="/cart">Корзина${ctx.cartCount ? html` <small class="drawer__badge">${ctx.cartCount}</small>` : ''}</a>
       </nav>
       <div class="drawer__foot">

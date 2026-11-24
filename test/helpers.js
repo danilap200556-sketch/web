@@ -163,4 +163,13 @@ async function fakeTelegram() {
   return { calls, updates, mode, url: `http://127.0.0.1:${server.address().port}`, close: () => new Promise((r) => server.close(r)) };
 }
 
-module.exports = { fakeTelegram, fakeSmsRu, startShop, client, addProduct, addSitePrice, ymd, addAdmin, adminLogin, jpeg };
+// Покупатель уже вошёл: подтверждённый клиент, сессия, cookie в клиенте. fresh - сессия «по коду» (15 минут можно менять пароль без старого).
+async function loginAs(shop, c, phone, { name = 'Тест', fresh = false } = {}) {
+  const { accounts, sessions } = shop.services;
+  const { customer } = await accounts.ensureByVerifiedPhone(phone, { name });
+  const token = await sessions.create(customer.id, { ip: '127.0.0.1', ua: 'test', fresh });
+  c.jar.set(sessions.cookieName, token);
+  return customer;
+}
+
+module.exports = { loginAs, fakeTelegram, fakeSmsRu, startShop, client, addProduct, addSitePrice, ymd, addAdmin, adminLogin, jpeg };

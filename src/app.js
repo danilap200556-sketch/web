@@ -13,6 +13,13 @@ const { createNotifier } = require('./notify');
 const { createCarriers } = require('./carriers');
 const { createPayments } = require('./payments');
 const { createPartner } = require('./partner');
+const { createAccounts } = require('./accounts');
+const { createSessions } = require('./customer-sessions');
+const { createCodes } = require('./auth-codes');
+const { createSms } = require('./sms');
+const { createMail } = require('./mail');
+const { createBot } = require('./tgbot');
+const { createLoyalty } = require('./loyalty');
 const { currentSeason, SEASONS } = require('./seasons');
 const { DEPARTMENTS } = require('./model');
 const { createMedia } = require('./media');
@@ -40,7 +47,15 @@ function createApp(cfg, db, opts = {}) {
   const notifier = createNotifier({ db, cfg });
   const carriers = createCarriers(cfg, { fetchImpl: opts.fetchImpl });
   const payments = createPayments({ db, cfg, settings, notifier, fetchImpl: opts.fetchImpl });
-  const services = { cfg, db, settings, catalog, delivery, carts, tracker, media, heroMedia, writeoff, notifier, carriers, payments, partner };
+  // Личный кабинет: аккаунты, сессии, одноразовые коды, каналы доставки кодов (SMS, Telegram, почта), лояльность
+  const accounts = createAccounts({ db });
+  const sessions = createSessions({ db, cfg });
+  const codes = createCodes({ db, cfg });
+  const sms = createSms(cfg.sms, { fetchImpl: opts.fetchImpl });
+  const mail = createMail(cfg.smtp, { transport: opts.mailTransport });
+  const bot = createBot({ db, cfg, accounts, codes, fetchImpl: opts.fetchImpl });
+  const loyalty = createLoyalty({ db, settings });
+  const services = { cfg, db, settings, catalog, delivery, carts, tracker, media, heroMedia, writeoff, notifier, carriers, payments, partner, accounts, sessions, codes, sms, mail, bot, loyalty };
   app.locals.services = services;
 
   // --- Заголовки безопасности. Скрипты и стили - только свои файлы (без inline).
@@ -63,7 +78,7 @@ function createApp(cfg, db, opts = {}) {
   heroMedia.mount(app);
   app.get('/favicon.ico', (req, res) => res.redirect(301, '/static/favicon.svg'));
   app.get('/robots.txt', (req, res) => {
-    res.type('text').send(`User-agent: *\nDisallow: /admin\nDisallow: /cart\nDisallow: /checkout\nDisallow: /order\nDisallow: /api\n` +
+    res.type('text').send(`User-agent: *\nDisallow: /admin\nDisallow: /cart\nDisallow: /checkout\nDisallow: /order\nDisallow: /account\nDisallow: /login\nDisallow: /api\n` +
       (cfg.publicUrl ? `Sitemap: ${cfg.publicUrl}/sitemap.xml\n` : ''));
   });
 
@@ -85,6 +100,18 @@ function createApp(cfg, db, opts = {}) {
 
   // Cookie разбираем один раз; дальше они нужны и витрине, и админке.
   app.use((req, res, next) => { req.cookies = sec.parseCookies(req.headers.cookie); next(); });
+
+  // Покупатель, вошедший в личный кабинет: по cookie сессии (запрос в базу только если cookie есть)
+  app.use(async (req, res, next) => {
+    req.customer = null;
+    req.customerSession = null;
+    try {
+      const t = req.cookies[sessions.cookieName];
+      const sess = t ? await sessions.resolve(t) : null;
+      if (sess) { req.customer = sess.customer; req.customerSession = { token: t, id: sess.sessionId, fresh: sess.fresh }; }
+      next();
+    } catch (e) { next(e); }
+  });
 
   // Контекст страницы витрины: настройки, сезон, отделы, число товаров в корзине.
   const cartName = cfg.secureCookies ? '__Host-cart' : 'cart';
@@ -115,6 +142,8 @@ function createApp(cfg, db, opts = {}) {
         baseUrl,
         assetV: ASSET_V,
         deliveryData: d,
+        loginEnabled: sms.enabled() || bot.enabled(),
+        customer: req.customer ? { id: req.customer.id, name: req.customer.name, phone: req.customer.phone, status: await loyalty.statusOf(req.customer) } : null,
       };
       res.locals.ctx = req.ctx;
       next();
@@ -130,6 +159,7 @@ function createApp(cfg, db, opts = {}) {
   require('./routes/shop')(app, services, shopCtx, send);
   require('./routes/cart')(app, services, shopCtx, send);
   require('./routes/pay')(app, services);
+  require('./routes/account')(app, services, shopCtx, send);
   require('./admin/routes')(app, services);
 
   // 404 и ошибки: оформленные страницы витрины
@@ -152,7 +182,7 @@ function createApp(cfg, db, opts = {}) {
     res.status(500).type('text').send('Что-то пошло не так. Попробуйте ещё раз через минуту.');
   });
 
-  app.locals.shutdown = async () => { writeoff.stop(); await notifier.stop(); await partner.stop(); await tracker.flush(); };
+  app.locals.shutdown = async () => { writeoff.stop(); await notifier.stop(); await bot.stop(); await partner.stop(); await tracker.flush(); };
   return app;
 }
 

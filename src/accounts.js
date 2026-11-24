@@ -77,9 +77,12 @@ function createAccounts({ db }) {
     }
   }
 
+  const unbindTelegram = (id) => db.query('UPDATE webshop.customers SET telegram_id = NULL WHERE id = $1', [id]);
+  const setTelegramNotify = (id, on) => db.query('UPDATE webshop.customers SET tg_notify = $2 WHERE id = $1', [id, Boolean(on)]);
+
   const touchLogin = (id) => db.query('UPDATE webshop.customers SET last_login_at = NOW() WHERE id = $1', [id]);
 
-  return { byId, byPhone, byLogin, ensureByVerifiedPhone, setPassword, checkPassword, setProfile, markEmailVerified, bindTelegram, touchLogin };
+  return { byId, byPhone, byLogin, ensureByVerifiedPhone, setPassword, checkPassword, setProfile, markEmailVerified, bindTelegram, unbindTelegram, setTelegramNotify, touchLogin };
 }
 
 module.exports = { createAccounts, AccountError };

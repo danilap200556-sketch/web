@@ -1,7 +1,7 @@
 'use strict';
 // Личный кабинет покупателя: вход (SMS, Telegram, почта и пароль), выход, кабинет.
 // Состояние входа лежит в req.customer (его выставляет app.js по cookie сессии).
-const { normalizePhone } = require('../util');
+const { normalizePhone, dateFmt } = require('../util');
 const { hashPassword, verifyPassword } = require('../security');
 const { CodeError } = require('../auth-codes');
 const { SmsError } = require('../sms');
@@ -245,9 +245,82 @@ module.exports = function mount(app, services, shopCtx, send) {
     return true;
   };
 
-  app.get('/account', shopCtx, (req, res) => {
-    if (needLogin(req, res)) return;
-    page(req, res, 200, 'Личный кабинет', views.accountHome({ customer: req.customer }));
+  const fmt = dateFmt(cfg.tz);
+
+  app.get('/account', shopCtx, async (req, res, next) => {
+    try {
+      if (needLogin(req, res)) return;
+      const orders = (await db.query(
+        'SELECT number, token, status, total, created_at FROM webshop.orders WHERE customer_id = $1 ORDER BY created_at DESC, id DESC LIMIT 50', [req.customer.id])).rows;
+      page(req, res, 200, 'Личный кабинет', views.accountHome({
+        customer: req.customer, status: req.ctx.customer.status, orders, fmt, shopName: req.ctx.settings.shopName, botOn: bot.enabled(),
+      }));
+    } catch (e) { next(e); }
+  });
+
+  // ---------- Telegram в кабинете ----------
+  const tgGuard = (req, res) => {
+    if (!bot.enabled()) { notFound(res); return true; }
+    return needLogin(req, res);
+  };
+
+  app.get('/account/telegram', shopCtx, (req, res) => {
+    if (tgGuard(req, res)) return;
+    page(req, res, 200, 'Telegram', views.telegramView({ customer: req.customer, saved: req.query.saved === '1' }));
+  });
+
+  app.post('/account/telegram/link', shopCtx, async (req, res, next) => {
+    try {
+      if (tgGuard(req, res)) return;
+      const key = req.ip || 'x';
+      if (tgLimiter.blocked(key)) return page(req, res, 429, 'Telegram', views.telegramView({ customer: req.customer, error: 'Слишком часто. Подождите несколько минут.' }));
+      tgLimiter.fail(key);
+      let link;
+      try { link = await bot.createLink({ purpose: 'link', customerId: req.customer.id }); } catch (e) {
+        console.warn('[tgbot]', e.message);
+        return page(req, res, 502, 'Telegram', views.telegramView({ customer: req.customer, error: 'Не удалось связаться с Telegram. Попробуйте позже.' }));
+      }
+      page(req, res, 200, 'Telegram', views.telegramView({ customer: req.customer, step: 'wait', token: link.token, url: link.url }));
+    } catch (e) { next(e); }
+  });
+
+  app.post('/account/telegram/verify', shopCtx, async (req, res, next) => {
+    try {
+      if (tgGuard(req, res)) return;
+      const tok = String(req.body.token || '').slice(0, 80);
+      const wait = async (status, error) => page(req, res, status, 'Telegram', views.telegramView({
+        customer: req.customer, step: 'wait', token: tok, url: await bot.linkUrl(tok, 'link').catch(() => '#'), error }));
+      const ok = tok && await codes.verify({ purpose: 'tg', target: tok, code: String(req.body.code || '').replace(/\s+/g, '') });
+      if (!ok) return wait(422, 'Неверный или просроченный код. Проверьте цифры или откройте бота заново.');
+      const { rows } = await db.query(
+        `UPDATE webshop.tg_login SET consumed_at = NOW()
+          WHERE token = $1 AND purpose = 'link' AND customer_id = $2 AND phone = $3 AND telegram_id IS NOT NULL AND consumed_at IS NULL AND expires_at > NOW()
+          RETURNING telegram_id`, [tok, req.customer.id, req.customer.phone]);
+      if (!rows[0]) return wait(422, 'Ссылка не подходит или устарела. Нажмите «Привязать Telegram» заново.');
+      try {
+        await accounts.bindTelegram(req.customer.id, rows[0].telegram_id);
+      } catch (e) {
+        if (!(e instanceof AccountError)) throw e;
+        return page(req, res, 422, 'Telegram', views.telegramView({ customer: req.customer, error: e.message }));
+      }
+      res.redirect('/account/telegram?saved=1');
+    } catch (e) { next(e); }
+  });
+
+  app.post('/account/telegram/unlink', shopCtx, async (req, res, next) => {
+    try {
+      if (tgGuard(req, res)) return;
+      await accounts.unbindTelegram(req.customer.id);
+      res.redirect('/account/telegram');
+    } catch (e) { next(e); }
+  });
+
+  app.post('/account/telegram/notify', shopCtx, async (req, res, next) => {
+    try {
+      if (tgGuard(req, res)) return;
+      await accounts.setTelegramNotify(req.customer.id, req.body.on === '1');
+      res.redirect('/account/telegram?saved=1');
+    } catch (e) { next(e); }
   });
 
   // Первый вход нового аккаунта: пароль и почта (можно пропустить)

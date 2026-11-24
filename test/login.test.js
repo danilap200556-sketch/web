@@ -397,3 +397,124 @@ test('вкладка «Почта и пароль» и ссылка «Забыл
   assert.match(r.text, /href="\/login\/forgot/);
   assert.match(r.text, /Забыли пароль\?/);
 });
+
+// ---------- Кабинет ----------
+let orderSeq = 9100;
+async function addOrder(customerId, { status = 'new', subtotal = 10000, discount = 0, phone = '79160000500', createdAt = null } = {}) {
+  const number = String(++orderSeq);
+  await shop.db.query(
+    `INSERT INTO webshop.orders (number, token, customer_id, status, name, phone, delivery_code, delivery_title, delivery_kind, pay_method, subtotal, discount, total, created_at)
+     VALUES ($1, $2, $3, $4, 'Покупатель', $5, 'pickup', 'Самовывоз', 'pickup', 'cod', $6, $7, $8, COALESCE($9::timestamptz, NOW()))`,
+    [number, `tok${number}`, customerId, status, phone, subtotal, discount, subtotal - discount, createdAt]);
+  return { number, token: `tok${number}` };
+}
+
+test('кабинет: карта лояльности и заказы клиента, чужих заказов нет', async () => {
+  const c = client(shop.base);
+  const cust = await loginAs(shop, c, '79160000501', { name: 'Анна' });
+  const other = await shop.services.accounts.ensureByVerifiedPhone('79160000502', { name: 'Чужой' });
+  const a = await addOrder(cust.id, { status: 'delivered', subtotal: 40000, createdAt: '2026-10-01T10:00:00Z' });
+  const b = await addOrder(cust.id, { status: 'paid', subtotal: 5000, createdAt: '2026-10-05T10:00:00Z' });
+  const d = await addOrder(cust.id, { status: 'cancelled', subtotal: 7000, createdAt: '2026-10-10T10:00:00Z' });
+  const foreign = await addOrder(other.customer.id, { status: 'delivered', subtotal: 99000 });
+  const page = (await c.get('/account')).text;
+  assert.match(page, /SH-0000\d+/);
+  assert.match(page, /Серебро/);
+  assert.match(page, /3%/);
+  assert.match(page, /40\s000\s₽/);                         // накоплено
+  assert.match(page, /до уровня «Золото»[^<]*60\s000\s₽/);   // сколько осталось
+  for (const o of [a, b, d]) assert.ok(page.includes(`href="/order/${o.number}?t=${o.token}"`), `заказ ${o.number}`);
+  assert.ok(!page.includes(foreign.number), 'чужой заказ не виден');
+  assert.ok(page.indexOf(d.number) < page.indexOf(b.number) && page.indexOf(b.number) < page.indexOf(a.number), 'новые сверху');
+  assert.match(page, /Получен/);
+  assert.match(page, /Оплачен/);
+  assert.match(page, /Отменён/);
+});
+
+test('кабинет: гостевой заказ, оформленный до регистрации на тот же телефон, виден после входа', async () => {
+  const g = await shop.db.query("INSERT INTO webshop.customers (phone, name) VALUES ('79160000503', 'Гость') RETURNING id");
+  const guest = await addOrder(g.rows[0].id, { status: 'new', phone: '79160000503' });
+  const c = client(shop.base);
+  await smsLogin(c, '+7 916 000 05 03');
+  assert.ok((await c.get('/account')).text.includes(`/order/${guest.number}?t=${guest.token}`));
+});
+
+test('кабинет: личная скидка выше уровня, новичок без заказов, выключенная лояльность', async () => {
+  const c = client(shop.base);
+  const cust = await loginAs(shop, c, '79160000504', { name: 'Новичок' });
+  let page = (await c.get('/account')).text;
+  assert.match(page, /Старт/);
+  assert.match(page, /Заказов пока нет/);
+  assert.match(page, /до уровня «Серебро»[^<]*30\s000\s₽/);
+  await shop.db.query('UPDATE webshop.customers SET personal_discount = 10 WHERE id = $1', [cust.id]);
+  page = (await c.get('/account')).text;
+  assert.match(page, /Личная скидка 10%/);
+  await shop.services.settings.set({ loyalty: { ...shop.services.settings.defaults.loyalty, enabled: false } });
+  try {
+    page = (await c.get('/account')).text;
+    assert.ok(!/SH-0000/.test(page), 'карты нет, когда лояльность выключена');
+    assert.match(page, /Заказов пока нет/);
+  } finally { await shop.services.settings.set({ loyalty: shop.services.settings.defaults.loyalty }); }
+});
+
+test('привязка Telegram из кабинета: номер должен совпасть, код вводится на сайте', async () => {
+  const c = client(shop.base);
+  const cust = await loginAs(shop, c, '79160000505', { name: 'Тг' });
+  assert.match((await c.get('/account/telegram')).text, /Привязать Telegram/);
+  const r = await c.post('/account/telegram/link', {}, ip());
+  assert.equal(r.status, 200);
+  const token = /data-tg-token="([^"]+)"/.exec(r.text)[1];
+  assert.ok(r.text.includes(`start=K${token}`));
+  await shop.services.bot.handleUpdate(tgMsg(810, { text: `/start K${token}` }));
+  await shop.services.bot.handleUpdate(tgContact(810, '+79160000599'));                 // другой номер
+  assert.match(tgSent().at(-1).body.text, /не совпада/);
+  await shop.services.bot.handleUpdate(tgContact(810, '+7 916 000 05 05'));
+  const code = tgCode();
+  assert.equal((await c.post('/account/telegram/verify', { token, code: code === '000000' ? '000001' : '000000' }, ip())).status, 422);
+  const ok = await c.post('/account/telegram/verify', { token, code }, ip());
+  assert.equal(ok.status, 302);
+  assert.equal(String((await shop.services.accounts.byId(cust.id)).telegram_id), '810');
+  const page = (await c.get('/account/telegram')).text;
+  assert.match(page, /Telegram привязан/);
+  assert.match(page, /action="\/account\/telegram\/unlink"/);
+  // уведомления о заказах: выключить и включить
+  assert.equal((await c.post('/account/telegram/notify', { on: '0' }, ip())).status, 302);
+  assert.equal((await shop.services.accounts.byId(cust.id)).tg_notify, false);
+  await c.post('/account/telegram/notify', { on: '1' }, ip());
+  assert.equal((await shop.services.accounts.byId(cust.id)).tg_notify, true);
+  // отвязка
+  assert.equal((await c.post('/account/telegram/unlink', {}, ip())).status, 302);
+  assert.equal((await shop.services.accounts.byId(cust.id)).telegram_id, null);
+});
+
+test('привязка Telegram: чужая ссылка и просроченный код не привязывают', async () => {
+  const c = client(shop.base);
+  const cust = await loginAs(shop, c, '79160000506');
+  const mine = await c.post('/account/telegram/link', {}, ip());
+  const myToken = /data-tg-token="([^"]+)"/.exec(mine.text)[1];
+  // ссылка входа (purpose login) не годится для привязки
+  const loginTok = (await shop.services.bot.createLink({ purpose: 'login' })).token;
+  await shop.db.query("UPDATE webshop.tg_login SET phone = '79160000506', telegram_id = 820 WHERE token = $1", [loginTok]);
+  const { code } = await shop.services.codes.issue({ purpose: 'tg', channel: 'tg', target: loginTok });
+  assert.equal((await c.post('/account/telegram/verify', { token: loginTok, code }, ip())).status, 422);
+  assert.equal((await shop.services.accounts.byId(cust.id)).telegram_id, null);
+  // ссылка привязки другого клиента
+  const other = await shop.services.accounts.ensureByVerifiedPhone('79160000507', {});
+  const theirs = (await shop.services.bot.createLink({ purpose: 'link', customerId: other.customer.id })).token;
+  await shop.db.query("UPDATE webshop.tg_login SET phone = '79160000507', telegram_id = 821 WHERE token = $1", [theirs]);
+  const c2 = await shop.services.codes.issue({ purpose: 'tg', channel: 'tg', target: theirs });
+  assert.equal((await c.post('/account/telegram/verify', { token: theirs, code: c2.code }, ip())).status, 422);
+  assert.ok(myToken);
+});
+
+test('без бота раздела Telegram нет', async () => {
+  const only = await startShop('cab_sms', { SMS_PROVIDER: 'console' });
+  try {
+    const c = client(only.base);
+    await loginAs(only, c, '79160000508');
+    const page = await c.get('/account');
+    assert.equal(page.status, 200);
+    assert.ok(!/Telegram/.test(page.text));
+    assert.equal((await c.get('/account/telegram')).status, 404);
+  } finally { await only.stop(); }
+});

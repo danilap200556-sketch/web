@@ -2,7 +2,8 @@
 // Страницы личного кабинета: вход, кабинет, политика. Оформление в стиле витрины (public/css/account.css).
 const { html } = require('./html');
 const { icon } = require('./icons');
-const { formatPhone } = require('./util');
+const { formatPhone, rub } = require('./util');
+const { STATUSES } = require('./orders');
 
 const maskPhone = (p) => (String(p).length === 11 ? `+7 (${p.slice(1, 4)}) •••-••-${p.slice(9)}` : String(p));
 const TAB_TITLES = { tg: 'Telegram', sms: 'SMS', pw: 'Почта и пароль' };
@@ -118,9 +119,9 @@ function smsPane({ step, phone, next }) {
 }
 
 // Вход через Telegram. step 'start' - кнопка, 'wait' - ссылка на бота и поле для кода (token нужен сайту, чтобы связать код с ссылкой)
-function tgPane({ step, url = '', token = '', next }) {
+function tgPane({ step, url = '', token = '', next = '', action = '/login/telegram/verify' }) {
   if (step === 'wait') {
-    return html`<form class="authform" method="post" action="/login/telegram/verify" data-tg-token="${token}">
+    return html`<form class="authform" method="post" action="${action}" data-tg-token="${token}">
       <input type="hidden" name="token" value="${token}"><input type="hidden" name="next" value="${next}">
       <ol class="authsteps">
         <li>Откройте бота в Telegram по кнопке ниже</li>
@@ -155,13 +156,71 @@ function loginView({ tabs, tab, next = '', error = '', panes }) {
   </section>`;
 }
 
-function accountHome({ customer }) {
+// Карта лояльности: уровень, скидка, шкала до следующего уровня (status - результат loyalty.statusOf)
+function loyaltyCard({ status, shopName }) {
+  const { tier, next, toNext, spent, pct, personal } = status;
+  const goal = next ? next.from : 0;
+  return html`<section class="lcard" aria-label="Карта лояльности">
+    <div class="lcard__top"><span class="lcard__brand">${shopName}</span><span class="lcard__no">${status.cardNo}</span></div>
+    <p class="lcard__tier">${tier.name}</p>
+    <p class="lcard__pct">Скидка ${pct}%</p>
+    ${personal > 0 ? html`<p class="lcard__note">Личная скидка ${personal}%</p>` : ''}
+    ${next
+      ? html`<progress class="lcard__bar" max="${goal}" value="${Math.min(spent, goal)}" aria-label="Накоплено до следующего уровня">${Math.round((spent / goal) * 100)}%</progress>
+        <p class="lcard__sub">Накоплено ${rub(spent)} · до уровня «${next.name}» осталось ${rub(toNext)}</p>`
+      : html`<p class="lcard__sub">Накоплено ${rub(spent)} · вы на высшем уровне</p>`}
+  </section>`;
+}
+
+function orderRows(orders, fmt) {
+  if (!orders.length) return html`<p class="muted">Заказов пока нет. <a class="link" href="/catalog">Перейти в каталог</a></p>`;
+  return html`<ul class="orderlist">${orders.map((o) => {
+    const st = STATUSES[o.status] || { title: o.status, tone: 'gray' };
+    return html`<li><a class="orderrow" href="/order/${o.number}?t=${o.token}">
+      <span class="orderrow__n">Заказ № ${o.number}</span>
+      <span class="orderrow__d muted">${fmt.dateTime(o.created_at)}</span>
+      <span class="ostatus ostatus--${st.tone}">${st.title}</span>
+      <b class="orderrow__sum">${rub(o.total)}</b></a></li>`;
+  })}</ul>`;
+}
+
+function accountHome({ customer, status, orders, fmt, shopName, botOn }) {
   return html`<section class="wrap cabinet">
     <p class="eyebrow">${icon('user')} Личный кабинет</p>
     <h1>Здравствуйте, ${customer.name || formatPhone(customer.phone)}</h1>
-    <p class="cabinet__links"><a class="link" href="/account/profile">Профиль</a> · <a class="link" href="/account/password">Пароль</a></p>
-    <form method="post" action="/account/logout"><button class="btn btn--ghost" type="submit">Выйти</button></form>
+    <div class="cabinet__grid">
+      <div class="cabinet__side">
+        ${status.enabled ? loyaltyCard({ status, shopName }) : ''}
+        <nav class="cabinet__links" aria-label="Настройки аккаунта">
+          <a class="link" href="/account/profile">Профиль</a>
+          <a class="link" href="/account/password">${customer.password_hash ? 'Сменить пароль' : 'Задать пароль'}</a>
+          ${botOn ? html`<a class="link" href="/account/telegram">${customer.telegram_id ? 'Telegram: уведомления' : 'Привязать Telegram'}</a>` : ''}
+          <form method="post" action="/account/logout"><button class="link link--btn" type="submit">Выйти</button></form>
+        </nav>
+      </div>
+      <div class="cabinet__main">
+        <h2>Мои заказы</h2>
+        ${orderRows(orders, fmt)}
+      </div>
+    </div>
   </section>`;
+}
+
+// Привязка Telegram и уведомления о заказах. step 'wait' - ссылка на бота и поле для кода.
+function telegramView({ customer, step = 'idle', token = '', url = '', error = '', saved = false }) {
+  let body;
+  if (step === 'wait') {
+    body = tgPane({ step: 'wait', token, url, action: '/account/telegram/verify' });
+  } else if (customer.telegram_id) {
+    body = html`<p>Telegram привязан. Бот сообщает о смене статуса ваших заказов.</p>
+      <form class="authform" method="post" action="/account/telegram/notify"><input type="hidden" name="on" value="${customer.tg_notify ? '0' : '1'}">
+        <button class="btn btn--lg btn--block btn--ghost" type="submit">${customer.tg_notify ? 'Выключить уведомления' : 'Включить уведомления'}</button></form>
+      <form class="authform" method="post" action="/account/telegram/unlink"><button class="btn btn--lg btn--block btn--ghost" type="submit">Отвязать Telegram</button></form>`;
+  } else {
+    body = html`<p>Привяжите Telegram: бот будет сообщать о статусе заказов, а вход в кабинет станет быстрее. Нужен Telegram с тем же номером, что и в аккаунте.</p>
+      <form class="authform" method="post" action="/account/telegram/link"><button class="btn btn--lg btn--block" type="submit">Привязать Telegram ${icon('arrow-right')}</button></form>`;
+  }
+  return boxPage({ title: 'Telegram', error, notice: saved ? 'Готово' : '', body: html`${body}<p class="authnote"><a class="link" href="/account">Назад в кабинет</a></p>` });
 }
 
 function privacyPage({ shopName, email, operator }) {
@@ -182,4 +241,4 @@ function privacyPage({ shopName, email, operator }) {
   </section>`;
 }
 
-module.exports = { loginView, smsPane, tgPane, pwPane, forgotView, resetView, messageView, welcomeView, profileView, passwordView, accountHome, privacyPage, maskPhone, consentCheck, TAB_TITLES };
+module.exports = { telegramView, loginView, smsPane, tgPane, pwPane, forgotView, resetView, messageView, welcomeView, profileView, passwordView, accountHome, privacyPage, maskPhone, consentCheck, TAB_TITLES };

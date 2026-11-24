@@ -198,6 +198,63 @@ const SCHEMA = [
      size INTEGER NOT NULL,
      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
    )`,
+  // --- Личный кабинет покупателя: подтверждённый телефон как идентичность, пароль, Telegram, личная скидка ---
+  `ALTER TABLE webshop.customers
+     ADD COLUMN IF NOT EXISTS password_hash TEXT,
+     ADD COLUMN IF NOT EXISTS phone_verified_at TIMESTAMPTZ,
+     ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ,
+     ADD COLUMN IF NOT EXISTS telegram_id BIGINT,
+     ADD COLUMN IF NOT EXISTS tg_notify BOOLEAN NOT NULL DEFAULT TRUE,
+     ADD COLUMN IF NOT EXISTS personal_discount NUMERIC(5,2) NOT NULL DEFAULT 0 CHECK (personal_discount BETWEEN 0 AND 100),
+     ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS customers_tg_uq ON webshop.customers (telegram_id) WHERE telegram_id IS NOT NULL`,
+  // Почта как логин уникальна только среди аккаунтов с паролем (у остальных это просто контакт из заказа)
+  `CREATE UNIQUE INDEX IF NOT EXISTS customers_email_login_uq ON webshop.customers (lower(email)) WHERE password_hash IS NOT NULL AND email <> ''`,
+  // Сессии покупателей: в cookie случайный токен, здесь только его sha256
+  `CREATE TABLE IF NOT EXISTS webshop.customer_sessions (
+     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+     customer_id INTEGER NOT NULL REFERENCES webshop.customers(id) ON DELETE CASCADE,
+     token_hash TEXT NOT NULL UNIQUE,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+     last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+     expires_at TIMESTAMPTZ NOT NULL,
+     fresh_until TIMESTAMPTZ,
+     ip TEXT NOT NULL DEFAULT '',
+     ua TEXT NOT NULL DEFAULT ''
+   )`,
+  `CREATE INDEX IF NOT EXISTS customer_sessions_customer_idx ON webshop.customer_sessions (customer_id)`,
+  // Одноразовые коды и токены (SMS, Telegram, ссылки из писем): хранится только HMAC
+  `CREATE TABLE IF NOT EXISTS webshop.auth_codes (
+     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+     purpose TEXT NOT NULL,
+     channel TEXT NOT NULL,
+     target TEXT NOT NULL,
+     code_hash TEXT NOT NULL,
+     attempts INTEGER NOT NULL DEFAULT 0,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+     expires_at TIMESTAMPTZ NOT NULL,
+     used_at TIMESTAMPTZ,
+     ip TEXT NOT NULL DEFAULT ''
+   )`,
+  `CREATE INDEX IF NOT EXISTS auth_codes_target_idx ON webshop.auth_codes (purpose, target, created_at)`,
+  `CREATE INDEX IF NOT EXISTS auth_codes_channel_idx ON webshop.auth_codes (channel, created_at)`,
+  // Вход и привязка через Telegram-бота: ссылка-токен, затем телефон и telegram_id из контакта
+  `CREATE TABLE IF NOT EXISTS webshop.tg_login (
+     token TEXT PRIMARY KEY,
+     purpose TEXT NOT NULL,
+     customer_id INTEGER,
+     phone TEXT,
+     telegram_id BIGINT,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+     expires_at TIMESTAMPTZ NOT NULL,
+     consumed_at TIMESTAMPTZ
+   )`,
+  // Сообщения покупателям (статус заказа) несут данные в payload; скидка лояльности хранится в заказе
+  `ALTER TABLE webshop.outbox ADD COLUMN IF NOT EXISTS payload TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE webshop.orders
+     ADD COLUMN IF NOT EXISTS discount NUMERIC(12,2) NOT NULL DEFAULT 0,
+     ADD COLUMN IF NOT EXISTS discount_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
+     ADD COLUMN IF NOT EXISTS discount_note TEXT NOT NULL DEFAULT ''`,
 ];
 
 module.exports = { SCHEMA };

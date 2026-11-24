@@ -18,6 +18,10 @@ function load(env = process.env) {
   const ssl = (env.DB_SSL || 'require').toLowerCase();
   if (!['require', 'verify', 'disable'].includes(ssl)) throw new Error('DB_SSL должен быть require, verify или disable');
 
+  const smsProvider = (env.SMS_PROVIDER || '').trim().toLowerCase();
+  if (!['', 'smsru', 'console'].includes(smsProvider)) throw new Error('SMS_PROVIDER должен быть пустым, smsru или console');
+  if (prod && smsProvider === 'console') throw new Error('SMS_PROVIDER=console только для разработки: коды попадают в журнал. На боевом сервере задайте smsru');
+
   return {
     prod,
     port: intEnv(env.PORT, 3000),
@@ -74,7 +78,25 @@ function load(env = process.env) {
       taxation: (env.TBANK_TAXATION || '').trim(),
       tax: (env.TBANK_TAX || 'none').trim(),
     },
+    // Личный кабинет покупателей: сессии, SMS-коды входа и письма (сброс пароля, подтверждение почты).
+    customer: { sessionDays: intEnv(env.CUSTOMER_SESSION_DAYS, 30) },
+    sms: {
+      provider: smsProvider,
+      apiKey: (env.SMS_API_KEY || '').trim(),
+      sender: (env.SMS_SENDER || '').trim(),
+      apiUrl: (env.SMS_API_URL || 'https://sms.ru').replace(/\/+$/, ''),
+      dailyCap: intEnv(env.SMS_DAILY_CAP, 300), // не больше стольких SMS за сутки: защита кошелька от перебора номеров
+    },
+    smtp: {
+      host: (env.SMTP_HOST || '').trim(),
+      port: intEnv(env.SMTP_PORT, 587),
+      secure: env.SMTP_SECURE === 'true',
+      user: (env.SMTP_USER || '').trim(),
+      pass: env.SMTP_PASS || '',
+      from: (env.SMTP_FROM || '').trim(),
+    },
     notify: {
+      telegramBotUsername: (env.TELEGRAM_BOT_USERNAME || '').trim().replace(/^@/, ''),
       telegramToken: (env.TELEGRAM_BOT_TOKEN || '').trim(),
       telegramChatIds: (env.TELEGRAM_CHAT_ID || '').split(/[\s,;]+/).filter(Boolean),
       telegramApi: (env.TELEGRAM_API_URL || 'https://api.telegram.org').replace(/\/+$/, ''),

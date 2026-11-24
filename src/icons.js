@@ -3,6 +3,10 @@ const { raw } = require('./html');
 
 // Набор линейных иконок 24x24. Спрайт вставляется в страницу один раз, дальше <use href="#i-имя">.
 const PATHS = {
+  spark: '<path fill="currentColor" stroke="none" d="M12 1.5 13.7 10.3 22.5 12 13.7 13.7 12 22.5 10.3 13.7 1.5 12 10.3 10.3Z"/>',
+  heart: '<path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.4a4.3 4.3 0 0 1 7.5 2.4C19.5 15.4 12 20 12 20Z"/>',
+  menu: '<path d="M4 7h16M4 12h16M4 17h10"/>',
+  send: '<path d="M21 4 3 11l6.5 2.2L18 7l-6.6 7.4L11 20l3.4-4.3L19 19l2-15Z"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
   bag: '<path d="M6 7h12l1 13H5L6 7Z"/><path d="M9 7V6a3 3 0 0 1 6 0v1"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',

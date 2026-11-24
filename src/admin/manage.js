@@ -5,6 +5,7 @@ const { str, slugify, normalizePhone } = require('../util');
 const { SmsError } = require('../sms');
 const sec = require('../security');
 const { ROLES } = require('./auth');
+const { telegramUrl } = require('../shopviews');
 
 const KIND = { pickup: 'Самовывоз', courier: 'Курьер', tc: 'Транспортная компания' };
 const money = (v) => { const n = parseFloat(String(v ?? '').replace(',', '.').replace(/\s/g, '')); return Number.isFinite(n) && n >= 0 ? Math.min(n, 1e7) : 0; };
@@ -323,6 +324,13 @@ module.exports = function mount({ db, auth, render, fmt, router, settings, deliv
           <label class="field">Почта<input name="email" type="email" value="${s.email}" maxlength="80"></label>
           <label class="field">Часы работы<input name="hours" value="${s.hours}" maxlength="80"></label>
           <label class="field field--wide">Адрес магазина<input name="address" value="${s.address}" maxlength="160"></label>
+          <label class="field field--wide">Telegram (канал или аккаунт для связи)<input name="telegram" value="${s.telegram}" maxlength="80" placeholder="@shop или https://t.me/shop"></label>
+          <h3 class="field--wide mform__sub">Юридические данные в подвале сайта</h3>
+          <p class="muted field--wide">Плашка внизу каждой страницы: продавец, ИНН, ОГРНИП, адрес. Продавец и ИНН берутся из реквизитов в блоке «Оплата» ниже.
+            Сейчас: <b>${(s.payment.requisites || {}).name || 'продавец не указан'}</b>, ИНН ${(s.payment.requisites || {}).inn || 'не указан'}.</p>
+          <label class="field">ОГРНИП или ОГРН<input name="ogrnip" value="${(s.legal || {}).ogrnip || ''}" inputmode="numeric" maxlength="15" pattern="\\d{13}|\\d{15}" title="13 цифр (ОГРН) или 15 цифр (ОГРНИП)"></label>
+          <label class="field">Юридический адрес<input name="legalAddress" value="${(s.legal || {}).address || ''}" maxlength="200" placeholder="Если отличается от адреса магазина"></label>
+          <label class="field field--wide">Строка о магазине<input name="about" value="${(s.legal || {}).about || ''}" maxlength="200" placeholder="${s.shopName} - магазин оригинальной обуви, одежды и аксессуаров"></label>
           <div class="mform__foot"><button class="btn btn--primary" type="submit">Сохранить</button></div>
         </form>
       </section>
@@ -338,7 +346,12 @@ module.exports = function mount({ db, auth, render, fmt, router, settings, deliv
   router.post('/settings', auth.require('settings'), async (req, res, next) => {
     try {
       const b = req.body;
-      await settings.set({ shopName: str(b.shopName, 40) || 'Магазин', phone: str(b.phone, 40), email: str(b.email, 80), hours: str(b.hours, 80), address: str(b.address, 160) });
+      const ogrnip = str(b.ogrnip, 20).replace(/\s+/g, '');
+      if (ogrnip && !/^(\d{13}|\d{15})$/.test(ogrnip)) { res.flash('err', 'ОГРН - 13 цифр, ОГРНИП - 15 цифр'); return res.redirect('/admin/settings'); }
+      const tg = str(b.telegram, 80);
+      if (tg && !telegramUrl(tg)) { res.flash('err', 'Telegram: укажите @имя или ссылку https://t.me/имя'); return res.redirect('/admin/settings'); }
+      await settings.set({ shopName: str(b.shopName, 40) || 'Магазин', phone: str(b.phone, 40), email: str(b.email, 80), hours: str(b.hours, 80), address: str(b.address, 160),
+        telegram: tg, legal: { ogrnip, address: str(b.legalAddress, 200), about: str(b.about, 200) } });
       res.flash('ok', 'Настройки сохранены');
       res.redirect('/admin/settings');
     } catch (e) { next(e); }

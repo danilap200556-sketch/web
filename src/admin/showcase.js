@@ -8,6 +8,7 @@ const { SEASONS, seasonOf, heroFor } = require('../seasons');
 const { SEASON_ICON, photoUrl } = require('../shopviews');
 const { norm } = require('../catalog');
 const { pager } = require('./layout');
+const { logoUrls } = require('../logo');
 
 const PAGE = 20;
 
@@ -20,7 +21,7 @@ function priceNotice(catalog) {
 }
 const REASON = { manual: 'Скрыта вручную', no_photo: 'Нет фото', no_price: 'Нет цены', note_only: 'Только размеры с пометками (без коробки, один кроссовок...)' };
 
-module.exports = function mount({ db, cfg, auth, render, router, catalog, settings, heroMedia }) {
+module.exports = function mount({ db, cfg, auth, render, router, catalog, settings, heroMedia, logo }) {
   router.get('/showcase', auth.require('showcase'), async (req, res, next) => {
     try {
       await catalog.ensure();
@@ -46,7 +47,36 @@ module.exports = function mount({ db, cfg, auth, render, router, catalog, settin
       const keep = (o) => { const u = new URLSearchParams(); for (const [k, v] of Object.entries({ q, show, ...o })) if (v) u.set(k, v); return u.toString(); };
 
       const hm = s.heroMedia && s.heroMedia.id ? s.heroMedia : null;
+      const lu = logoUrls(s);
       const body = html`
+      <section class="card card--pad">
+        <header class="card__h"><div><h2>Логотип</h2>
+          <p class="muted">Стоит в шапке и подвале сайта, из него же делается значок во вкладке браузера. Подойдёт PNG, JPEG или WebP до 10 МБ, лучше
+          от 500 px по высоте. Однотонный фон по углам картинки убирается сам.
+          «Одноцветный логотип» перекрашивает знаки в чёрный (на светлом фоне) и в белый (в чёрной шапке и подвале): так выглядят чётче.
+          Цветной логотип с этой галочкой снимите - он встанет как есть.</p></div></header>
+        <div class="logobox">
+          <div class="logobox__now">
+            <span class="logobox__pv logobox__pv--dark"><img src="${lu.light}" alt="Логотип на тёмном фоне"></span>
+            <span class="logobox__pv"><img src="${lu.dark}" alt="Логотип на светлом фоне"></span>
+            <span class="logobox__pv logobox__pv--icon"><img src="${lu.icon}" alt="Значок вкладки"></span>
+            <p>${lu.custom ? html`Сейчас: <b>свой логотип</b>${s.logo.mono ? ', одноцветный' : ', как есть'}.` : html`Сейчас: <b>логотип по умолчанию</b> (KS).`}</p>
+          </div>
+          <form class="heromedia__form" action="/admin/showcase/logo" method="post" data-hero-upload data-csrf="${req.admin.csrf}">${req.adminCsrf}
+            <label class="field">Новый логотип<input type="file" name="file" accept="image/png,image/jpeg,image/webp" required data-hero-file></label>
+            <label class="check"><input type="checkbox" name="mono" checked data-upload-flag><span>Одноцветный логотип</span></label>
+            <button class="btn btn--primary" type="submit">Загрузить</button>
+            <progress class="heromedia__progress" max="100" value="0" hidden data-hero-progress></progress>
+            <p class="heromedia__msg" role="status" data-hero-msg></p>
+          </form>
+          <form method="post" action="/admin/showcase/logo-text" class="logobox__opts">${req.adminCsrf}
+            <label class="check"><input type="checkbox" name="logoText" ${s.logoText ? 'checked' : ''}><span>Писать название «${s.shopName}» рядом с логотипом</span></label>
+            <button class="btn" type="submit">Сохранить</button>
+          </form>
+          ${lu.custom ? html`<form method="post" action="/admin/showcase/logo/remove">${req.adminCsrf}<button class="btn" type="submit">Убрать свой логотип</button></form>` : ''}
+        </div>
+      </section>
+
       <section class="card card--pad">
         <header class="card__h"><div><h2>Фон первого экрана</h2>
           <p class="muted">Своё видео или фото на всю ширину главной, как у больших магазинов. Без файла там живой фон в цветах сезона.
@@ -154,6 +184,38 @@ module.exports = function mount({ db, cfg, auth, render, router, catalog, settin
         res.json({ ok: true, id: r.id, kind: r.kind });
       } catch (e) { next(e); }
     });
+
+  // Логотип: файл приходит «как есть», как и фон первого экрана; галочка «одноцветный» - в адресе (?mono=0|1)
+  router.post('/showcase/logo',
+    express.raw({ type: () => true, limit: '12mb' }),
+    (req, res, next) => {
+      req.logoUpload = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+      req.body = { _csrf: req.get('x-csrf-token') || '' };
+      next();
+    },
+    auth.require('showcase'),
+    async (req, res, next) => {
+      try {
+        const r = await logo.save(req.logoUpload, { mono: req.query.mono !== '0' });
+        if (r.error) return res.status(400).json({ error: r.error });
+        res.flash('ok', 'Логотип загружен: он уже на сайте');
+        res.json({ ok: true, id: r.id });
+      } catch (e) { next(e); }
+    });
+  router.post('/showcase/logo/remove', auth.require('showcase'), async (req, res, next) => {
+    try {
+      await logo.remove();
+      res.flash('ok', 'Свой логотип убран: на сайте логотип по умолчанию');
+      res.redirect('/admin/showcase');
+    } catch (e) { next(e); }
+  });
+  router.post('/showcase/logo-text', auth.require('showcase'), async (req, res, next) => {
+    try {
+      await settings.set({ logoText: req.body.logoText === 'on' });
+      res.flash('ok', 'Сохранено');
+      res.redirect('/admin/showcase');
+    } catch (e) { next(e); }
+  });
 
   router.post('/showcase/hero-media/remove', auth.require('showcase'), async (req, res, next) => {
     try {

@@ -13,6 +13,8 @@ const ASSET_V = Date.now().toString(36);
 
 const chip = (status) => html`<span class="chip chip--${STATUSES[status]?.tone || 'gray'}">${STATUSES[status]?.title || status}</span>`;
 
+const { logoUrls } = require('../logo');
+
 module.exports = function mount(app, services) {
   const { cfg, db, catalog, settings, writeoff } = services;
   const auth = createAuth(services);
@@ -22,7 +24,9 @@ module.exports = function mount(app, services) {
 
   // Единая отрисовка страницы: подставляет csrf, счётчик новых заказов и название магазина
   async function render(req, res, section, opts, status = 200) {
-    req.shopName = (await settings.get()).shopName;
+    const st = await settings.get();
+    req.shopName = st.shopName;
+    req.logo = logoUrls(st);
     req.assetV = ASSET_V;
     req.adminCsrf = auth.csrfField(req);
     if (can(req.admin.user.role, 'orders')) {

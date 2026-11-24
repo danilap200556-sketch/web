@@ -255,6 +255,18 @@ const SCHEMA = [
      ADD COLUMN IF NOT EXISTS discount NUMERIC(12,2) NOT NULL DEFAULT 0,
      ADD COLUMN IF NOT EXISTS discount_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
      ADD COLUMN IF NOT EXISTS discount_note TEXT NOT NULL DEFAULT ''`,
+  // --- Логотип сайта из админки: исходник и готовые варианты (для светлого и тёмного фона, значок вкладки); хранится одна запись ---
+  `CREATE TABLE IF NOT EXISTS webshop.site_logo (
+     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+     mono BOOLEAN NOT NULL,
+     original BYTEA NOT NULL,
+     dark BYTEA NOT NULL,
+     light BYTEA NOT NULL,
+     icon BYTEA NOT NULL,
+     width INTEGER NOT NULL,
+     height INTEGER NOT NULL,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+   )`,
 ];
 
 module.exports = { SCHEMA };

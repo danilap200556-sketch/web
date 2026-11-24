@@ -24,7 +24,8 @@ const { currentSeason, SEASONS } = require('./seasons');
 const { DEPARTMENTS } = require('./model');
 const { createMedia } = require('./media');
 const { createHeroMedia } = require('./heromedia');
-const { shopPage } = require('./shopviews');
+const { createLogo } = require('./logo');
+const { shopPage, favSlugs } = require('./shopviews');
 const { icon } = require('./icons');
 
 const ASSET_V = Date.now().toString(36);
@@ -43,6 +44,7 @@ function createApp(cfg, db, opts = {}) {
   const tracker = createTracker(db, cfg);
   const media = createMedia(db, { partner });
   const heroMedia = createHeroMedia({ db, settings });
+  const logo = createLogo({ db, settings });
   const writeoff = createWriteoff(db);
   // Личный кабинет: аккаунты, сессии, одноразовые коды, каналы доставки кодов (SMS, Telegram, почта), лояльность
   const accounts = createAccounts({ db });
@@ -55,7 +57,7 @@ function createApp(cfg, db, opts = {}) {
   const notifier = createNotifier({ db, cfg, bot });
   const carriers = createCarriers(cfg, { fetchImpl: opts.fetchImpl });
   const payments = createPayments({ db, cfg, settings, notifier, fetchImpl: opts.fetchImpl });
-  const services = { cfg, db, settings, catalog, delivery, carts, tracker, media, heroMedia, writeoff, notifier, carriers, payments, partner, accounts, sessions, codes, sms, mail, bot, loyalty };
+  const services = { cfg, db, settings, catalog, delivery, carts, tracker, media, heroMedia, logo, writeoff, notifier, carriers, payments, partner, accounts, sessions, codes, sms, mail, bot, loyalty };
   app.locals.services = services;
 
   // --- Заголовки безопасности. Скрипты и стили - только свои файлы (без inline).
@@ -76,9 +78,12 @@ function createApp(cfg, db, opts = {}) {
   app.use('/static', express.static(path.join(__dirname, '..', 'public'), { maxAge: cfg.prod ? '7d' : 0, index: false }));
   media.mount(app);
   heroMedia.mount(app);
-  app.get('/favicon.ico', (req, res) => res.redirect(301, '/static/favicon.svg'));
+  logo.mount(app);
+  app.get('/favicon.ico', async (req, res, next) => {
+    try { const s = await settings.get(); res.redirect(302, s.logo && s.logo.id ? `/media/logo/${s.logo.id}/icon.png` : '/static/favicon.svg'); } catch (e) { next(e); }
+  });
   app.get('/robots.txt', (req, res) => {
-    res.type('text').send(`User-agent: *\nDisallow: /admin\nDisallow: /cart\nDisallow: /checkout\nDisallow: /order\nDisallow: /account\nDisallow: /login\nDisallow: /api\n` +
+    res.type('text').send(`User-agent: *\nDisallow: /admin\nDisallow: /cart\nDisallow: /checkout\nDisallow: /favorites\nDisallow: /order\nDisallow: /account\nDisallow: /login\nDisallow: /api\n` +
       (cfg.publicUrl ? `Sitemap: ${cfg.publicUrl}/sitemap.xml\n` : ''));
   });
 
@@ -138,6 +143,8 @@ function createApp(cfg, db, opts = {}) {
         saleCount,
         dept: String(req.query.dept || ''),
         cartCount: Math.max(0, Math.min(99, parseInt(req.cookies[cartCountName], 10) || 0)),
+        favCount: favSlugs(req).filter((x) => catalog.bySlug.has(x)).length,
+        navActive: req.query.sale ? 'sale' : req.query.sort === 'new' && !req.query.dept ? 'new' : '',
         freeFrom: frees.length ? Math.min(...frees) : 0,
         baseUrl,
         assetV: ASSET_V,

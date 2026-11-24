@@ -4,7 +4,7 @@ const { icon } = require('../icons');
 const { rub, plural, num } = require('../util');
 const { DEPARTMENTS } = require('../model');
 const { SEASONS, heroFor, seasonPicks } = require('../seasons');
-const { card, pagination, photoUrl, countLabel, priceBlock, SEASON_ICON } = require('../shopviews');
+const { card, pagination, photoUrl, countLabel, priceBlock, favBtn, favSlugs, SEASON_ICON } = require('../shopviews');
 const { quote, PAY_METHODS } = require('../delivery');
 
 const SIZES_QUICK = ['36', '37', '38', '39', '40', '41', '42', '43', '44', '45', '46'];
@@ -59,12 +59,15 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner }, 
     const elecBrands = [...elec.reduce((acc, m) => (m.brand ? acc.set(m.brand, (acc.get(m.brand) || 0) + 1) : acc), new Map())].sort((x, y) => y[1] - x[1]).slice(0, 5).map(([b]) => b);
     const inStockCount = catalog.models.filter((m) => m.inStock).length;
     const marquee = [...new Set([...brands.map(([b]) => b), ...elecBrands])].slice(0, 16);
-    const SEASON_WORD = { winter: 'Winter', spring: 'Spring', summer: 'Summer', autumn: 'Autumn' };
-    const railHead = (eyebrow, title, link) => html`<div class="block__head"><div><p class="eyebrow">${eyebrow}</p><h2>${title}</h2></div>
+    const railHead = (title, link, sub = '') => html`<div class="block__head"><div><h2>${title}</h2>${sub ? html`<p class="block__sub">${sub}</p>` : ''}</div>
       <div class="rail__ctl">${link || ''}<div class="rail__nav"><button type="button" class="rail__btn" data-rail-prev aria-label="Назад">${icon('arrow-right')}</button><button type="button" class="rail__btn" data-rail-next aria-label="Вперёд">${icon('arrow-right')}</button></div></div></div>`;
+    const maxOff = onSale.reduce((mx, m) => Math.max(mx, m.discount || 0), 0);
+    const salePics = onSale.filter((m) => m.cover).slice(0, 2);
+    const newPick = newest.find((m) => m.inStock) || newest[0];
 
-    const body = html`
-    <section class="hero hero--v3${heroMedia ? ' hero--media' : ''}" data-hero>
+    // Слайды баннера: сезон (живой фон или своё видео/фото из админки), скидки, новинки, электроника
+    const slides = [];
+    slides.push(html`<article class="slide slide--season${heroMedia ? ' hero--media' : ''}" data-hero>
       <div class="hero__bg" aria-hidden="true">
         <div class="hero__fallback"></div>
         ${heroMedia && heroMedia.kind === 'image'
@@ -72,44 +75,74 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner }, 
           : html`<canvas class="hero__gl" data-hero-gl></canvas>`}
         ${heroMedia && heroMedia.kind === 'video' ? html`<video class="hero__video" muted loop playsinline preload="none" data-hero-video data-src="/media/hero/${heroMedia.id}"></video>` : ''}
         <div class="hero__shade"></div>
-        <div class="hero__grain"></div>
       </div>
-      <div class="wrap hero__in">
-        <div class="hero__copy">
-          <p class="hero__eyebrow"><span class="hero__dot"></span>${hero.eyebrow} ${new Date().getFullYear()} · новая подборка</p>
-          <h1 class="hero__title" aria-label="${hero.title}">${hero.title.split(/\s+/).filter(Boolean).map((w) => html`<span class="w" aria-hidden="true"><span>${w}</span></span> `)}</h1>
-          <p class="hero__text">${hero.text}</p>
-          <div class="hero__cta">
-            <a class="btn btn--light btn--lg" href="#picks" data-magnetic>Смотреть подборку ${icon('arrow-right')}</a>
-            <a class="btn btn--glass btn--lg" href="/catalog" data-magnetic>Весь каталог</a>
+      <div class="slide__in">
+        <div class="slide__copy">
+          <p class="slide__eyebrow">${icon(SEASON_ICON[season])} ${hero.eyebrow} ${new Date().getFullYear()}</p>
+          <h1 class="slide__title">${hero.title}</h1>
+          <p class="slide__text">${hero.text}</p>
+          <div class="slide__cta">
+            <a class="btn btn--light btn--lg" href="#picks">Смотреть подборку ${icon('arrow-right')}</a>
+            <a class="btn btn--glass btn--lg" href="/catalog">Весь каталог</a>
           </div>
-          <form class="hero__search" action="/catalog" method="get" role="search">
-            ${icon('search')}
-            <input type="search" name="q" placeholder="Модель, бренд или артикул" autocomplete="off" aria-label="Поиск по магазину" data-search-input data-search-inline>
-            <button class="btn btn--sm" type="submit">Найти</button>
-          </form>
         </div>
         ${heroModels.length ? html`<div class="spot" data-spot>
-          <span class="spot__word" aria-hidden="true" data-parallax="-0.06">${SEASON_WORD[season]}</span>
-          <div class="spot__card" data-tilt>
+          <div class="spot__card">
             <div class="spot__bars">${heroModels.map((m, i) => html`<button type="button" class="spot__bar${i === 0 ? ' is-active' : ''}" data-spot-go="${i}" aria-label="${m.brand} ${m.model}: модель ${i + 1} из ${heroModels.length}"><i></i></button>`)}</div>
             ${heroModels.map((m, i) => html`<a class="spot__item${i === 0 ? ' is-active' : ''}" href="/p/${m.slug}" data-spot-item ${i ? raw('tabindex="-1" aria-hidden="true"') : ''}>
               <img src="${photoUrl(m.cover, 640)}" alt="${m.title}" width="640" height="640" ${i === 0 ? raw('fetchpriority="high"') : raw('loading="lazy"')}>
               <span class="spot__info"><small>${m.brand}${m.type ? ' · ' + m.type : ''}</small><b>${m.model || m.title}</b><span>${rub(m.price)}</span></span>
-              <span class="spot__go">${icon('arrow-up-right')}</span>
             </a>`)}
           </div>
         </div>` : ''}
       </div>
-      <div class="hero__foot">
-        <div class="wrap hero__foot-in">
-          <dl class="hero__stats">
-            <div><dt data-count="${inStockCount}">${num(inStockCount)}</dt><dd>моделей в наличии</dd></div>
-            <div><dt>7 дней</dt><dd>на обмен и возврат</dd></div>
-            ${ctx.freeFrom > 0 ? html`<div><dt>${rub(ctx.freeFrom)}</dt><dd>бесплатная доставка от</dd></div>` : html`<div><dt>СБП</dt><dd>карта и перевод</dd></div>`}
-          </dl>
-          <a class="hero__scroll" href="#picks" aria-label="К подборке сезона"><span>Листайте</span><i></i></a>
+    </article>`);
+    if (onSale.length >= 2 && maxOff > 0) slides.push(html`<article class="slide slide--sale">
+      <div class="slide__in">
+        <div class="slide__copy">
+          <p class="slide__kicker">Sale</p>
+          <p class="slide__big"><small>до</small><b>${maxOff}%</b></p>
+          <p class="slide__caps">на ${num(ctx.saleCount)} ${plural(ctx.saleCount, 'модель', 'модели', 'моделей')} в наличии</p>
+          <div class="slide__cta"><a class="btn btn--lg" href="/catalog?sale=1&amp;sort=discount">Смотреть все скидки ${icon('arrow-right')}</a></div>
         </div>
+        <div class="slide__pics" aria-hidden="true">
+          <i class="streak streak--sale"></i>
+          ${salePics.map((m, i) => html`<img class="slide__pic slide__pic--${i + 1}" src="${photoUrl(m.cover, 640)}" alt="" width="640" height="640" loading="lazy">`)}
+        </div>
+      </div>
+    </article>`);
+    if (newPick && newPick.cover) slides.push(html`<article class="slide slide--new">
+      <div class="slide__in">
+        <div class="slide__pics" aria-hidden="true"><img class="slide__pic" src="${photoUrl(newPick.cover, 1280)}" alt="" width="1280" height="1280" loading="lazy"></div>
+        <div class="slide__copy">
+          <p class="slide__new">New</p>
+          <h2 class="slide__title">Выбери свою модель</h2>
+          <p class="slide__text">Новые поступления каждую неделю: ${[...new Set(newest.map((m) => m.brand).filter(Boolean))].slice(0, 4).join(', ')} и другие.</p>
+          <div class="slide__cta"><a class="btn btn--outline btn--lg" href="/catalog?sort=new">Перейти в каталог</a></div>
+        </div>
+      </div>
+    </article>`);
+    if (elecPicks.length) slides.push(html`<article class="slide slide--elec">
+      <div class="slide__in">
+        <div class="slide__copy">
+          <p class="slide__eyebrow">${icon('chip')} Новый раздел</p>
+          <h2 class="slide__title">Электроника</h2>
+          <p class="slide__text">${elecBrands.join(', ')} и другие бренды. Наличие и цены обновляются каждые несколько часов.</p>
+          <div class="slide__cta"><a class="btn btn--light btn--lg" href="/catalog?dept=elektronika">Смотреть ${icon('arrow-right')}</a></div>
+        </div>
+        <div class="slide__pics" aria-hidden="true">${elecPicks.slice(0, 3).map((m, i) => html`<span class="slide__chip slide__chip--${i + 1}"><img src="${photoUrl(m.cover, 360)}" alt="" width="360" height="360" loading="lazy"></span>`)}</div>
+      </div>
+    </article>`);
+
+    const body = html`
+    <section class="banner" data-banner aria-roledescription="carousel" aria-label="Главные предложения">
+      <div class="wrap banner__wrap">
+        <div class="banner__track" data-banner-track>
+          ${slides.map((sl, i) => html`<div class="banner__slide" role="group" aria-roledescription="slide" aria-label="${i + 1} из ${slides.length}" data-banner-slide>${sl}</div>`)}
+        </div>
+        ${slides.length > 1 ? html`<button class="banner__arrow banner__arrow--prev" type="button" data-banner-prev aria-label="Предыдущий слайд">${icon('chevron-left')}</button>
+        <button class="banner__arrow banner__arrow--next" type="button" data-banner-next aria-label="Следующий слайд">${icon('chevron-right')}</button>
+        <div class="banner__dots">${slides.map((_, i) => html`<button type="button" class="banner__dot${i === 0 ? ' is-active' : ''}" data-banner-dot="${i}" aria-label="Слайд ${i + 1}"><i></i></button>`)}</div>` : ''}
       </div>
     </section>
 
@@ -119,34 +152,65 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner }, 
 
     <section class="usp">
       <div class="wrap usp__grid">
-        <div class="usp__item" data-reveal>${icon('truck')}<div><b>Доставка по России</b><span>СДЭК, Boxberry, Почта, курьер</span></div></div>
-        <div class="usp__item" data-reveal>${icon('store')}<div><b>Самовывоз с примеркой</b><span>Заберите сегодня</span></div></div>
-        <div class="usp__item" data-reveal>${icon('shield')}<div><b>Только оригинал</b><span>Проверяем каждую пару</span></div></div>
-        <div class="usp__item" data-reveal>${icon('return')}<div><b>Обмен и возврат</b><span>7 дней на решение</span></div></div>
+        <div class="usp__item">${icon('shield')}<div><b>Только оригинал</b><span>Проверяем каждую пару</span></div></div>
+        <div class="usp__item">${icon('truck')}<div><b>Доставка по России</b><span>${ctx.freeFrom > 0 ? `Бесплатно от ${rub(ctx.freeFrom)}` : 'СДЭК, Boxberry, Почта, курьер'}</span></div></div>
+        <div class="usp__item">${icon('store')}<div><b>Самовывоз с примеркой</b><span>Заберите сегодня</span></div></div>
+        <div class="usp__item">${icon('return')}<div><b>Обмен и возврат</b><span>7 дней на решение</span></div></div>
       </div>
     </section>
 
     ${picks.length ? html`<section class="block" id="picks">
       <div class="wrap" data-rail data-reveal>
-        ${railHead(html`${icon(SEASON_ICON[season])} Выбор сезона`, `${SEASONS[season].title}: что носим сейчас`, html`<a class="link rail__all" href="/catalog?sort=popular">Весь каталог ${icon('arrow-right')}</a>`)}
+        ${railHead(`${SEASONS[season].title}: выбор сезона`, html`<a class="link rail__all" href="/catalog?sort=popular">Смотреть все ${icon('arrow-right')}</a>`)}
         <div class="rail__track">${picks.map((m, i) => card(m, { priority: i < 4 }))}</div>
       </div>
     </section>` : ''}
 
+    ${tiles.length ? html`<section class="block">
+      <div class="wrap">
+        <div class="block__head" data-reveal><div><h2>Категории</h2></div><div class="rail__ctl"><a class="link rail__all" href="/catalog">Весь каталог ${icon('arrow-right')}</a></div></div>
+        <div class="tiles">
+          ${tiles.map((t) => html`<a class="tile" href="${t.href}" data-reveal>
+            <span class="tile__img"><img src="${photoUrl(t.cover, 640)}" alt="" width="640" height="640" loading="lazy"></span>
+            <span class="tile__t"><b>${t.title}</b><i>${t.count} ${plural(t.count, 'модель', 'модели', 'моделей')}</i></span>
+          </a>`)}
+        </div>
+      </div>
+    </section>` : ''}
+
+    <section class="block block--tight">
+      <div class="wrap">
+        <div class="paybar" data-reveal>
+          <div><b>Оплачивайте как удобно</b><span>СБП по QR-коду, перевод по реквизитам${ctx.freeFrom > 0 ? html`, бесплатная доставка от ${rub(ctx.freeFrom)}` : ''}</span></div>
+          <ul class="paybar__list"><li>${icon('qr')} СБП</li><li>${icon('card')} Карта</li><li>${icon('bank')} Перевод</li><li>${icon('cash')} При получении</li></ul>
+        </div>
+      </div>
+    </section>
+
     ${onSale.length >= 4 ? html`<section class="block">
       <div class="wrap" data-rail data-reveal>
-        ${railHead(html`${icon('tag')} Цены снижены`, 'Сейчас со скидкой', html`<a class="link rail__all" href="/catalog?sale=1&amp;sort=discount">Все скидки ${icon('arrow-right')}</a>`)}
+        ${railHead(html`Скидки <span class="block__hot">до −${maxOff}%</span>`, html`<a class="link rail__all" href="/catalog?sale=1&amp;sort=discount">Все скидки ${icon('arrow-right')}</a>`)}
         <div class="rail__track">${onSale.map((m) => card(m))}</div>
+      </div>
+    </section>` : ''}
+
+    ${newest.length ? html`<section class="block">
+      <div class="wrap" data-rail data-reveal>
+        ${railHead('Новые поступления', html`<a class="link rail__all" href="/catalog?sort=new">Все новинки ${icon('arrow-right')}</a>`)}
+        <div class="rail__track">${newest.map((m) => card(m))}</div>
       </div>
     </section>` : ''}
 
     <section class="block block--finder" data-reveal>
       <div class="wrap">
-        <div class="finder" data-finder data-glow>
+        <div class="finder" data-finder>
           <div class="finder__copy">
-            <p class="eyebrow">Подбор пары</p>
-            <h2>Выберите размер и тип,<br>остальное найдём</h2>
-            <p>Покажем только то, что есть в вашем размере прямо сейчас.</p>
+            <h2>Подбор пары</h2>
+            <p>Выберите тип и размер: покажем только то, что есть в вашем размере прямо сейчас.</p>
+            <dl class="finder__stats">
+              <div><dt data-count="${inStockCount}">${num(inStockCount)}</dt><dd>моделей в наличии</dd></div>
+              <div><dt>${brands.length}</dt><dd>${plural(brands.length, 'бренд', 'бренда', 'брендов')}</dd></div>
+            </dl>
           </div>
           <form class="finder__form" action="/catalog" method="get">
             <fieldset class="finder__row">
@@ -158,7 +222,7 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner }, 
             <fieldset class="finder__row">
               <legend>Ваш размер (EU)</legend>
               <div class="sizes">
-                ${SIZES_QUICK.map((s) => html`<label class="size"><input type="checkbox" name="size" value="${s}" data-finder-input><span>${s}</span></label>`)}
+                ${SIZES_QUICK.map((sz) => html`<label class="size"><input type="checkbox" name="size" value="${sz}" data-finder-input><span>${sz}</span></label>`)}
               </div>
             </fieldset>
             <fieldset class="finder__row finder__row--split">
@@ -171,7 +235,7 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner }, 
               <label>Цена до
                 <select name="max" data-finder-input>
                   <option value="">Любая</option>
-                  ${[8000, 12000, 16000, 24000].map((p) => html`<option value="${p}">${rub(p)}</option>`)}
+                  ${[8000, 12000, 16000, 24000].map((pr) => html`<option value="${pr}">${rub(pr)}</option>`)}
                 </select>
               </label>
             </fieldset>
@@ -180,20 +244,6 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner }, 
         </div>
       </div>
     </section>
-
-
-    ${tiles.length ? html`<section class="block">
-      <div class="wrap">
-        <div class="block__head" data-reveal><div><p class="eyebrow">Категории</p><h2>Что вы ищете</h2></div></div>
-        <div class="tiles">
-          ${tiles.map((t, i) => html`<a class="tile tile--${i + 1}${t.dark ? ' tile--dark' : ''}" href="${t.href}" data-reveal>
-            <img src="${photoUrl(t.cover, 640)}" alt="" width="640" height="640" loading="lazy">
-            <span class="tile__t"><b>${t.title}</b><i>${t.count} ${plural(t.count, 'модель', 'модели', 'моделей')}</i></span>
-            <span class="tile__go">${icon('arrow-up-right')}</span>
-          </a>`)}
-        </div>
-      </div>
-    </section>` : ''}
 
     ${elecPicks.length ? html`<section class="block">
       <div class="wrap" data-reveal>
@@ -211,13 +261,6 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner }, 
             </a>`)}
           </div>
         </div>
-      </div>
-    </section>` : ''}
-
-    ${newest.length ? html`<section class="block">
-      <div class="wrap" data-rail data-reveal>
-        ${railHead('Только что поступили', 'Новинки', html`<a class="link rail__all" href="/catalog?sort=new">Все новинки ${icon('arrow-right')}</a>`)}
-        <div class="rail__track">${newest.map((m) => card(m))}</div>
       </div>
     </section>` : ''}
 
@@ -403,7 +446,10 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner }, 
               ${m.sizes.map((s) => html`<label class="size${s.qty > 0 ? '' : ' is-off'}" title="${s.qty > 0 ? (s.qty <= 2 ? 'Осталось ' + s.qty + ' шт.' : 'В наличии') : 'Нет в наличии'}">
                 <input type="radio" name="pid" value="${s.id}" ${s.qty > 0 ? '' : raw('disabled')} data-size-label="${s.label}" data-left="${s.qty}" required><span>${s.label}</span></label>`)}
             </div>`}
-            <button class="btn btn--lg btn--block" type="submit" ${m.inStock ? '' : raw('disabled')} data-add-btn>${m.inStock ? html`${icon('bag')} Добавить в корзину` : 'Нет в наличии'}</button>
+            <div class="buy__row">
+              <button class="btn btn--lg btn--block" type="submit" ${m.inStock ? '' : raw('disabled')} data-add-btn>${m.inStock ? html`${icon('bag')} Добавить в корзину` : 'Нет в наличии'}</button>
+              ${favBtn(m, favSlugs(req).includes(m.slug), 'fav fav--lg')}
+            </div>
           </form>
           <ul class="perks">
             <li>${icon('truck')}<span><b>Доставка</b> от ${rub(minDelivery ? minDelivery.q.price : 0)}${ctx.freeFrom ? html`, бесплатно от ${rub(ctx.freeFrom)}` : ''}</span></li>
@@ -424,6 +470,54 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner }, 
     send(req, res, { title: m.title + (m.colorway ? ` «${m.colorway}»` : ''), body, bodyClass: 'page-pdp', canonical: `/p/${m.slug}`, og: m.cover ? { image: photoUrl(m.cover, 640) } : null, jsonLd,
       description: `${m.fullName}: ${rub(m.price)}${m.inStock ? ', в наличии' : ''}. Оригинал, доставка по России и самовывоз.` });
     } catch (e) { next(e); }
+  });
+
+  // ---------- Избранное: адреса моделей лежат в cookie fav, страница собирается на сервере ----------
+  app.get('/favorites', shopCtx, (req, res) => {
+    tracker.record(req, res, 'page', { path: '/favorites' });
+    const list = favSlugs(req).map((x) => catalog.bySlug.get(x)).filter(Boolean);
+    const body = html`
+    <section class="wrap catalog favpage">
+      <nav class="crumbs"><a href="/">Главная</a>${icon('chevron-right')}<span>Избранное</span></nav>
+      <div class="catalog__head"><div><h1>Избранное</h1><p class="muted">${list.length ? countLabel(list.length) : 'Здесь появятся модели, отмеченные сердечком'}</p></div></div>
+      ${list.length ? html`<div class="grid">${list.map((m) => card(m, { fav: true }))}</div>`
+        : html`<div class="empty"><p>Нажмите ${icon('heart')} на карточке модели, чтобы не потерять её. Избранное хранится в этом браузере.</p>
+          <p><a class="btn" href="/catalog?sort=popular">Перейти в каталог ${icon('arrow-right')}</a></p></div>`}
+    </section>`;
+    send(req, res, { title: 'Избранное', body, bodyClass: 'page-plain', noindex: true });
+  });
+
+  // ---------- Бренды: по алфавиту, с числом моделей в наличии ----------
+  app.get('/brands', shopCtx, (req, res) => {
+    tracker.record(req, res, 'page', { path: '/brands' });
+    req.ctx.navActive = 'brands';
+    const counts = new Map();
+    const covers = new Map();
+    for (const m of catalog.models) {
+      if (!m.inStock || !m.brand) continue;
+      counts.set(m.brand, (counts.get(m.brand) || 0) + 1);
+      if (m.cover && (!covers.has(m.brand) || m.featured)) covers.set(m.brand, m.cover);
+    }
+    const all = [...counts].sort((x, y) => x[0].localeCompare(y[0], 'ru', { sensitivity: 'base' }));
+    const top = [...counts].sort((x, y) => y[1] - x[1]).slice(0, 8);
+    const groups = new Map();
+    for (const [b, n] of all) {
+      const ch = /^[a-zа-яё]/i.test(b) ? b[0].toUpperCase() : '#';
+      if (!groups.has(ch)) groups.set(ch, []);
+      groups.get(ch).push([b, n]);
+    }
+    const body = html`
+    <section class="wrap catalog brandspage">
+      <nav class="crumbs"><a href="/">Главная</a>${icon('chevron-right')}<span>Бренды</span></nav>
+      <div class="catalog__head"><div><h1>Бренды</h1><p class="muted">${all.length} ${plural(all.length, 'бренд', 'бренда', 'брендов')} в наличии</p></div></div>
+      ${top.length ? html`<div class="brandtop">${top.map(([b, n]) => html`<a class="brandtop__item" href="/catalog?brand=${encodeURIComponent(b)}">
+        ${covers.get(b) ? html`<img src="${photoUrl(covers.get(b), 360)}" alt="" width="360" height="360" loading="lazy">` : ''}
+        <b>${b}</b><i>${n} ${plural(n, 'модель', 'модели', 'моделей')}</i></a>`)}</div>` : ''}
+      <nav class="abc" aria-label="Буквы">${[...groups.keys()].map((ch) => html`<a href="#b-${ch === '#' ? 'num' : ch}">${ch}</a>`)}</nav>
+      <div class="brandlist">${[...groups].map(([ch, list]) => html`<section class="brandlist__g" id="b-${ch === '#' ? 'num' : ch}"><h2>${ch}</h2>
+        <ul>${list.map(([b, n]) => html`<li><a href="/catalog?brand=${encodeURIComponent(b)}">${b}<i>${n}</i></a></li>`)}</ul></section>`)}</div>
+    </section>`;
+    send(req, res, { title: 'Бренды', body, bodyClass: 'page-plain', canonical: '/brands', description: `Бренды в ${req.ctx.settings.shopName}: ${all.slice(0, 12).map(([b]) => b).join(', ')}.` });
   });
 
   // ---------- Доставка и оплата ----------
@@ -488,7 +582,7 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner }, 
     try {
       await catalog.ensure();
       const base = cfg.publicUrl || `${req.protocol}://${req.get('host')}`;
-      const urls = ['/', '/catalog', '/delivery', ...catalog.models.filter((m) => m.inStock).slice(0, 40000).map((m) => `/p/${m.slug}`)];
+      const urls = ['/', '/catalog', '/brands', '/delivery', ...catalog.models.filter((m) => m.inStock).slice(0, 40000).map((m) => `/p/${m.slug}`)];
       res.type('application/xml').send('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' +
         urls.map((u) => `<url><loc>${base}${encodeURI(u)}</loc></url>`).join('') + '</urlset>');
     } catch (e) { next(e); }

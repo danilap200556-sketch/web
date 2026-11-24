@@ -86,7 +86,9 @@
       if (!f) return;
       if (f.size > 64 * 1024 * 1024) { msg.textContent = 'Файл больше 64 МБ: сожмите видео (1080p, 10-20 секунд)'; return; }
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', form.action);
+      // галочки-параметры загрузки (например, «одноцветный логотип») уходят в адресе: тело запроса - сам файл
+      const flags = $$('input[data-upload-flag]', form).map((c) => encodeURIComponent(c.name) + '=' + (c.checked ? 1 : 0));
+      xhr.open('POST', form.action + (flags.length ? '?' + flags.join('&') : ''));
       xhr.setRequestHeader('Content-Type', f.type || 'application/octet-stream');
       xhr.setRequestHeader('X-CSRF-Token', form.dataset.csrf);
       xhr.setRequestHeader('Accept', 'application/json');

@@ -28,14 +28,14 @@ function adminPage(req, { title, section, actions = '', body, wide = false }) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
   <title>${title} - Админка</title>
-  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="${(req.logo || {}).icon || '/static/favicon.svg'}">
   <link rel="stylesheet" href="/static/css/admin.css?v=${req.assetV}">
 </head>
 <body>
   ${sprite()}
   <div class="shell">
     <aside class="side" id="side">
-      <a class="side__brand" href="/admin"><svg class="logo__mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M3 21c0-2 1-3 3-3.4l4.6-.9c1.6-.3 2.7-1.3 3.4-2.8l1-2.1 4.2 2.2c1.6.8 3.2 1.4 4.8 1.8 2.5.6 4 1.6 4 3.7V24H3v-3Z"/><path class="logo__sole" d="M3 26h26"/></svg><span>${shop}<small>админка</small></span></a>
+      <a class="side__brand" href="/admin"><img class="side__logo" src="${(req.logo || {}).light || '/static/img/logo-ks-light.svg'}" alt="" width="40" height="36"><span>${shop}<small>админка</small></span></a>
       <nav class="side__nav">
         ${NAV.filter((n) => can(a.user.role, n.key)).map((n) => html`<a class="side__link${section === n.key ? ' is-active' : ''}" href="${n.href}">${icon(n.icon)}<span>${n.title}</span>${n.badge && req.badges && req.badges[n.badge] ? html`<b class="side__badge">${req.badges[n.badge]}</b>` : ''}</a>`)}
       </nav>

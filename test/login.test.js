@@ -1,8 +1,13 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const nodemailer = require('nodemailer');
 const { startShop, client, fakeSmsRu, fakeTelegram, loginAs } = require('./helpers');
 
+const mailbox = [];
+const mailReal = nodemailer.createTransport({ jsonTransport: true });
+const mailTransport = { sendMail: async (m) => { const info = await mailReal.sendMail(m); mailbox.push(JSON.parse(info.message)); return info; } };
+const waitMail = async (n) => { for (let i = 0; i < 60 && mailbox.length < n; i++) await new Promise((r) => setTimeout(r, 25)); return mailbox.at(-1); };
 let shop, sms, tg, ipn = 0;
 test.before(async () => {
   sms = await fakeSmsRu();
@@ -10,7 +15,8 @@ test.before(async () => {
   shop = await startShop('login', {
     SMS_PROVIDER: 'smsru', SMS_API_KEY: 'k', SMS_API_URL: sms.url, TRUST_PROXY: '1', SHOP_NAME: 'SOLEHOUSE',
     TELEGRAM_BOT_TOKEN: '123456:TEST-token-abcdefghijklmnopqrstuvwxyz0123', TELEGRAM_CHAT_ID: '1', TELEGRAM_API_URL: tg.url,
-  });
+    SMTP_HOST: 'smtp.test', SMTP_USER: 'u', SMTP_PASS: 'p', SMTP_FROM: 'SOLEHOUSE <shop@test.ru>', PUBLIC_URL: 'https://shop.test',
+  }, { app: { mailTransport } });
 });
 test.after(async () => { await shop.stop(); await sms.close(); await tg.close(); });
 
@@ -34,7 +40,7 @@ test('вход по SMS: номер в любом написании, один �
   assert.match(sms.calls[0].msg, /^\d{6} /);
   const r2 = await c.post('/login/sms/verify', { phone: '+7 916 000 01 01', code: lastCode() }, ip());   // другое написание того же номера
   assert.equal(r2.status, 302);
-  assert.equal(r2.location, '/account');
+  assert.equal(r2.location, '/account/welcome');     // новый аккаунт: предлагаем задать пароль и почту
   assert.match((await c.get('/account')).text, /Здравствуйте/);
   assert.equal(await customersWith('79160000101'), 1);
   // третий вход тем же номером в третьем написании (минута прошла): тот же аккаунт
@@ -42,6 +48,7 @@ test('вход по SMS: номер в любом написании, один �
   const c2 = client(shop.base);
   const r3 = await smsLogin(c2, '916-000-01-01');
   assert.equal(r3.status, 302);
+  assert.equal(r3.location, '/account', 'не новый аккаунт: сразу в кабинет');
   assert.equal(await customersWith('79160000101'), 1);
 });
 
@@ -79,9 +86,9 @@ test('переход после входа: свой путь можно, чуж
   const a = await smsLogin(client(shop.base), '+7 916 000 01 05', { next: '/checkout' });
   assert.equal(a.location, '/checkout');
   const b = await smsLogin(client(shop.base), '+7 916 000 01 06', { next: '//evil.example/x' });
-  assert.equal(b.location, '/account');
+  assert.equal(b.location, '/account/welcome');
   const c = await smsLogin(client(shop.base), '+7 916 000 01 07', { next: 'https://evil.example/' });
-  assert.equal(c.location, '/account');
+  assert.equal(c.location, '/account/welcome');
 });
 
 test('выход и подделанная cookie', async () => {
@@ -160,7 +167,7 @@ test('вход через Telegram: ссылка на бота, контакт, 
   const code = tgCode();
   const ok = await c.post('/login/telegram/verify', { token, code }, ip());
   assert.equal(ok.status, 302);
-  assert.equal(ok.location, '/account');
+  assert.equal(ok.location, '/account/welcome');
   assert.match((await c.get('/account')).text, /Здравствуйте/);
   const cust = (await shop.db.query("SELECT * FROM webshop.customers WHERE phone = '79160000302'")).rows[0];
   assert.equal(String(cust.telegram_id), '555');
@@ -217,4 +224,176 @@ test('вкладки входа: Telegram и SMS, по умолчанию Telegr
   assert.match(r.text, /href="\/login\?tab=sms"/);
   const sms2 = await client(shop.base).get('/login?tab=sms');
   assert.match(sms2.text, /action="\/login\/sms\/send"/);
+});
+
+// ---------- Пароль, «Забыли пароль», профиль ----------
+async function accountWithPassword(phone, { email = '', password = 'password-1', verified = false } = {}) {
+  const { accounts } = shop.services;
+  const { customer } = await accounts.ensureByVerifiedPhone(phone, { name: 'Покупатель' });
+  if (email) await accounts.setProfile(customer.id, { name: 'Покупатель', email });
+  await accounts.setPassword(customer.id, password);
+  if (verified) await accounts.markEmailVerified(customer.id);
+  return customer;
+}
+const pwLogin = (c, login, password, extra = {}) => c.post('/login/password', { login, password, ...extra }, ip());
+
+test('вход по паролю: телефон и почта в любом регистре, обычная (не свежая) сессия', async () => {
+  const cust = await accountWithPassword('79160000401', { email: 'Buyer401@Example.ru' });
+  const a = client(shop.base);
+  const r1 = await pwLogin(a, '8 916 000-04-01', 'password-1', { next: '/checkout' });
+  assert.equal(r1.status, 302);
+  assert.equal(r1.location, '/checkout');
+  const b = client(shop.base);
+  const r2 = await pwLogin(b, ' buyer401@example.RU ', 'password-1');
+  assert.equal(r2.location, '/account');
+  assert.match((await b.get('/account')).text, /Здравствуйте/);
+  const sess = (await shop.db.query('SELECT fresh_until FROM webshop.customer_sessions WHERE customer_id = $1 ORDER BY id DESC LIMIT 1', [cust.id])).rows[0];
+  assert.equal(sess.fresh_until, null);
+});
+
+test('вход по паролю: одинаковая ошибка для неизвестного и неверного, после пяти неудач блокировка', async () => {
+  await accountWithPassword('79160000402');
+  const c = client(shop.base);
+  const wrong = await pwLogin(c, '79160000402', 'не-тот-пароль');
+  const unknown = await pwLogin(c, '79160000499', 'не-тот-пароль');
+  assert.equal(wrong.status, 422);
+  assert.equal(unknown.status, 422);
+  assert.match(wrong.text, /Неверный логин или пароль/);
+  assert.match(unknown.text, /Неверный логин или пароль/);
+  for (let i = 0; i < 4; i++) await pwLogin(c, '79160000402', 'не-тот-пароль');
+  const blocked = await pwLogin(c, '79160000402', 'password-1');                    // верный пароль, но попыток уже слишком много
+  assert.equal(blocked.status, 429);
+  assert.match(blocked.text, /Слишком много попыток/);
+  assert.equal((await c.get('/account')).status, 302);
+});
+
+test('«Забыли пароль»: страница с каналами, неизвестный адресат получает тот же ответ и ничего не отправляется', async () => {
+  const c = client(shop.base);
+  const page = await c.get('/login/forgot');
+  assert.equal(page.status, 200);
+  assert.match(page.text, /tab=tg&amp;next=%2Faccount%2Fpassword/);
+  assert.match(page.text, /tab=sms&amp;next=%2Faccount%2Fpassword/);
+  assert.match(page.text, /action="\/login\/forgot\/mail"/);
+  const mails = mailbox.length;
+  const smsN = sms.calls.length;
+  const unknown = await c.post('/login/forgot/mail', { login: 'nobody@example.ru' }, ip());
+  await accountWithPassword('79160000403', { email: 'unverified403@example.ru', verified: false });
+  const unverified = await c.post('/login/forgot/mail', { login: 'unverified403@example.ru' }, ip());
+  await new Promise((r) => setTimeout(r, 150));
+  assert.equal(unknown.status, 200);
+  assert.equal(unverified.status, 200);
+  assert.match(unknown.text, /Если такой аккаунт есть/);
+  assert.equal(unknown.text.replace(/\s+/g, ' ').replace(/value="[^"]*"/g, ''), unverified.text.replace(/\s+/g, ' ').replace(/value="[^"]*"/g, ''), 'ответы совпадают');
+  assert.equal(mailbox.length, mails, 'письмо не уходит');
+  assert.equal(sms.calls.length, smsN);
+});
+
+test('сброс пароля по ссылке: письмо, ссылка не гасится от просмотра, один раз, затем новый пароль без старого', async () => {
+  const cust = await accountWithPassword('79160000404', { email: 'reset404@example.ru', verified: true });
+  const other = client(shop.base);
+  await pwLogin(other, '79160000404', 'password-1');                                // сессия на другом устройстве
+  const c = client(shop.base);
+  const before = mailbox.length;
+  assert.equal((await c.post('/login/forgot/mail', { login: '+7 916 000-04-04' }, ip())).status, 200);   // по номеру, письмо на почту аккаунта
+  const mail = await waitMail(before + 1);
+  assert.equal(mail.to[0].address, 'reset404@example.ru');
+  const link = /https:\/\/shop\.test(\/login\/reset\/[\w-]+)/.exec(mail.text)[1];
+  const view = await c.get(link);
+  assert.equal(view.status, 200);
+  assert.match(view.text, /action="\/login\/reset"/);
+  assert.equal((await c.get(link)).status, 200, 'просмотр не гасит ссылку');
+  const token = /name="token" value="([^"]+)"/.exec(view.text)[1];
+  const used = await c.post('/login/reset', { token }, ip());
+  assert.equal(used.status, 302);
+  assert.equal(used.location, '/account/password');
+  assert.equal((await client(shop.base).post('/login/reset', { token }, ip())).status, 422, 'ссылка одноразовая');
+  // свежая сессия: старый пароль не нужен
+  const form = await c.get('/account/password');
+  assert.doesNotMatch(form.text, /name="old"/);
+  const set = await c.post('/account/password', { password: 'new-password-2', password2: 'new-password-2' }, ip());
+  assert.equal(set.status, 302);
+  assert.equal((await other.get('/account')).status, 302, 'сессия на другом устройстве закрыта');
+  assert.equal((await c.get('/account')).status, 200, 'текущая жива');
+  assert.equal((await pwLogin(client(shop.base), '79160000404', 'new-password-2')).status, 302);
+  assert.equal((await pwLogin(client(shop.base), '79160000404', 'password-1')).status, 422);
+});
+
+test('смена пароля из обычной сессии: нужен старый, слабый и несовпадающий отклоняются', async () => {
+  await accountWithPassword('79160000405');
+  const c = client(shop.base);
+  await pwLogin(c, '79160000405', 'password-1');
+  assert.match((await c.get('/account/password')).text, /name="old"/);
+  const bad = (form) => c.post('/account/password', form, ip());
+  assert.equal((await bad({ old: 'wrong-old-1', password: 'new-password-3', password2: 'new-password-3' })).status, 422);
+  assert.match((await bad({ old: 'password-1', password: '123', password2: '123' })).text, /не короче 8/);
+  assert.match((await bad({ old: 'password-1', password: 'new-password-3', password2: 'другой-пароль-4' })).text, /не совпадают/);
+  const ok = await bad({ old: 'password-1', password: 'new-password-3', password2: 'new-password-3' });
+  assert.equal(ok.status, 302);
+  assert.equal((await pwLogin(client(shop.base), '79160000405', 'new-password-3')).status, 302);
+});
+
+test('профиль: имя и почта, занятая почта и неверный адрес отклоняются, письмо подтверждения и ссылка', async () => {
+  await accountWithPassword('79160000406', { email: 'taken406@example.ru' });
+  const c = client(shop.base);
+  const cust = await loginAs(shop, c, '79160000407', { name: 'Старое имя' });
+  assert.match((await c.get('/account/profile')).text, /Старое имя/);
+  assert.equal((await c.post('/account/profile', { name: 'Новое имя', email: 'не почта' }, ip())).status, 422);
+  const mails = mailbox.length;
+  const ok = await c.post('/account/profile', { name: 'Новое имя', email: 'mine407@example.ru' }, ip());
+  assert.equal(ok.status, 302);
+  const row = (await shop.db.query('SELECT name, email, email_verified_at FROM webshop.customers WHERE id = $1', [cust.id])).rows[0];
+  assert.equal(row.name, 'Новое имя');
+  assert.equal(row.email, 'mine407@example.ru');
+  assert.equal(row.email_verified_at, null);
+  const mail = await waitMail(mails + 1);
+  assert.equal(mail.to[0].address, 'mine407@example.ru');
+  const link = /https:\/\/shop\.test(\/login\/verify-email\/[\w-]+)/.exec(mail.text)[1];
+  assert.equal((await client(shop.base).get(link)).status, 200);
+  assert.ok((await shop.db.query('SELECT email_verified_at FROM webshop.customers WHERE id = $1', [cust.id])).rows[0].email_verified_at);
+  assert.equal((await client(shop.base).get(link)).status, 410, 'ссылка одноразовая');
+  // новая почта сбрасывает подтверждение, ссылка на старую почту не подтвердит новую
+  await shop.db.query("UPDATE webshop.auth_codes SET created_at = created_at - INTERVAL '2 minutes' WHERE target LIKE $1", [`${cust.id}:%`]);
+  const mails2 = mailbox.length;
+  await c.post('/account/profile', { name: 'Новое имя', email: 'second407@example.ru' }, ip());
+  const second = await waitMail(mails2 + 1);
+  assert.equal((await shop.db.query('SELECT email_verified_at FROM webshop.customers WHERE id = $1', [cust.id])).rows[0].email_verified_at, null);
+  await shop.services.accounts.setProfile(cust.id, { name: 'Новое имя', email: 'third407@example.ru' });
+  const stale = /\/login\/verify-email\/[\w-]+/.exec(second.text)[0];
+  assert.equal((await client(shop.base).get(stale)).status, 410, 'почта уже другая');
+  assert.equal((await shop.db.query('SELECT email_verified_at FROM webshop.customers WHERE id = $1', [cust.id])).rows[0].email_verified_at, null);
+});
+
+test('занятая почта в профиле: понятная ошибка', async () => {
+  await accountWithPassword('79160000408', { email: 'busy408@example.ru' });
+  const c = client(shop.base);
+  await loginAs(shop, c, '79160000409');
+  await shop.services.accounts.setPassword((await shop.services.accounts.byPhone('79160000409')).id, 'password-1');
+  const r = await c.post('/account/profile', { name: 'Имя', email: 'BUSY408@example.ru' }, ip());
+  assert.equal(r.status, 422);
+  assert.match(r.text, /уже используется/);
+});
+
+test('экран «Задайте пароль и почту»: новый аккаунт попадает на него, можно задать или пропустить', async () => {
+  const c = client(shop.base);
+  const first = await smsLogin(c, '+7 916 000 04 10');
+  assert.equal(first.location, '/account/welcome');
+  assert.equal((await c.get('/account/welcome')).status, 200);
+  const bad = await c.post('/account/welcome', { email: 'w410@example.ru', password: 'short', password2: 'short' }, ip());
+  assert.equal(bad.status, 422);
+  const ok = await c.post('/account/welcome', { email: 'w410@example.ru', password: 'password-410', password2: 'password-410' }, ip());
+  assert.equal(ok.status, 302);
+  assert.equal(ok.location, '/account');
+  assert.equal((await pwLogin(client(shop.base), 'w410@example.ru', 'password-410')).status, 302);
+  const skip = await smsLogin(client(shop.base), '+7 916 000 04 11');
+  const noPass = await client(shop.base).get('/account/welcome');
+  assert.equal(noPass.status, 302, 'без входа экран недоступен');
+  assert.equal(skip.location, '/account/welcome');
+  assert.equal((await shop.services.accounts.byPhone('79160000411')).password_hash, null, 'пропустили: пароля нет');
+});
+
+test('вкладка «Почта и пароль» и ссылка «Забыли пароль?»', async () => {
+  const r = await client(shop.base).get('/login?tab=pw');
+  assert.match(r.text, /action="\/login\/password"/);
+  assert.match(r.text, /href="\/login\/forgot/);
+  assert.match(r.text, /Забыли пароль\?/);
 });

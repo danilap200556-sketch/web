@@ -1,6 +1,7 @@
 'use strict';
 // Общее для интеграционных тестов: отдельная база, схема склада, магазин на случайном порту, клиент с cookie.
 const http = require('node:http');
+const assert = require('node:assert/strict');
 const { Client } = require('pg');
 const sharp = require('sharp');
 const { load } = require('../src/config');
@@ -172,4 +173,22 @@ async function loginAs(shop, c, phone, { name = 'Тест', fresh = false } = {}
   return customer;
 }
 
-module.exports = { loginAs, fakeTelegram, fakeSmsRu, startShop, client, addProduct, addSitePrice, ymd, addAdmin, adminLogin, jpeg };
+let placeSeq = 0;
+// Оформляет заказ самовывозом с оплатой при получении (c - клиент с cookie, чтобы заказывать вошедшим; pid - один товар или список)
+async function placeOrder(shop, pid, { phone = '89160000001', qty = 1, comment = '', c = client(shop.base), delivery = 'pickup', name = 'Анна' } = {}) {
+  await c.get('/');
+  for (const p of [].concat(pid)) for (let i = 0; i < qty; i++) await c.post('/cart/add', { pid: p });
+  const co = (await c.get('/checkout')).text;
+  // Сайт ограничивает число заказов с одного адреса; при TRUST_PROXY каждому заказу даём «свой» адрес
+  const h = shop.cfg.trustProxy ? { headers: { 'x-forwarded-for': `10.9.${(++placeSeq >> 8) & 255}.${placeSeq & 255}` } } : {};
+  const r = await c.post('/checkout', {
+    idem: /name="idem" value="([^"]+)"/.exec(co)[1], name, phone, delivery,
+    point: /name="point" value="(\d+)"/.exec(co)[1], pay: 'cod', consent: '1', comment,
+  }, h);
+  assert.equal(r.status, 303, r.text.slice(0, 200));
+  const number = /\/order\/(\d+)/.exec(r.location)[1];
+  const orderId = (await shop.db.query('SELECT id FROM webshop.orders WHERE number = $1', [number])).rows[0].id;
+  return { number, orderId, location: r.location, c };
+}
+
+module.exports = { placeOrder, loginAs, fakeTelegram, fakeSmsRu, startShop, client, addProduct, addSitePrice, ymd, addAdmin, adminLogin, jpeg };

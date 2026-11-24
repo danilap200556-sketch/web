@@ -1,24 +1,10 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { startShop, client, addProduct, adminLogin, fakeTelegram } = require('./helpers');
+const { startShop, client, addProduct, adminLogin, fakeTelegram, placeOrder } = require('./helpers');
 
 const TOKEN = '123456:TEST-token-abcdefghijklmnopqrstuvwxyz0123';
 
-async function placeOrder(shop, pid, { phone = '89160000001', qty = 1, comment = '' } = {}) {
-  const c = client(shop.base);
-  await c.get('/');
-  for (let i = 0; i < qty; i++) await c.post('/cart/add', { pid });
-  const co = (await c.get('/checkout')).text;
-  const r = await c.post('/checkout', {
-    idem: /name="idem" value="([^"]+)"/.exec(co)[1], name: 'Анна', phone, delivery: 'pickup',
-    point: /name="point" value="(\d+)"/.exec(co)[1], pay: 'cod', consent: '1', comment,
-  });
-  assert.equal(r.status, 303, r.text.slice(0, 200));
-  const number = /\/order\/(\d+)/.exec(r.location)[1];
-  const orderId = (await shop.db.query('SELECT id FROM webshop.orders WHERE number = $1', [number])).rows[0].id;
-  return { number, orderId };
-}
 const waitFor = async (fn, ms = 4000) => {
   const end = Date.now() + ms;
   for (;;) { const v = await fn(); if (v) return v; if (Date.now() > end) throw new Error('не дождались'); await new Promise((r) => setTimeout(r, 25)); }

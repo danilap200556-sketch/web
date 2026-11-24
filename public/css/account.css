@@ -44,3 +44,8 @@
 .ostatus--gray { background: #ece8e1; color: #5b544d; }
 .ostatus--red { background: #fee2e2; color: #991b1b; }
 @media (max-width: 860px) { .cabinet__grid { grid-template-columns: 1fr; } .cabinet__side { position: static; } }
+
+/* Скидка лояльности в корзине, оформлении и мини-корзине */
+.sumrows__disc { color: var(--good); font-weight: 650; }
+.minicart__sum--disc b { color: var(--good); }
+.loyalty-hint { margin: 12px 0 0; padding: 10px 14px; border-radius: var(--r-sm); background: var(--accent-soft); font-size: 14px; display: flex; gap: 8px; align-items: center; }

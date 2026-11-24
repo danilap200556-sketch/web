@@ -198,6 +198,7 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
       <div class="minicart__body" data-mini-body></div>
       <footer class="minicart__foot" hidden>
         <div class="minicart__sum"><span>Товары</span><b data-mini-sum></b></div>
+        <div class="minicart__sum minicart__sum--disc" data-mini-disc-row hidden><span data-mini-disc-label>Скидка</span><b data-mini-disc></b></div>
         <p class="minicart__note">Доставку и скидки посчитаем на следующем шаге</p>
         <a class="btn btn--lg btn--block" href="/checkout">Оформить заказ ${icon('arrow-right')}</a>
         <a class="link link--center" href="/cart">Открыть корзину</a>

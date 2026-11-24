@@ -126,6 +126,12 @@
         body.appendChild(row);
       }
       sum.textContent = rub(d.subtotal);
+      const discRow = $('[data-mini-disc-row]', mini);
+      discRow.hidden = !(d.discount > 0);
+      if (d.discount > 0) {
+        $('[data-mini-disc-label]', mini).textContent = 'Скидка ' + d.discountPct + '%';
+        $('[data-mini-disc]', mini).textContent = '−' + rub(d.discount);
+      }
       if (d.free && d.lines.length) {
         free.hidden = false;
         $('[data-mini-free-text]', mini).textContent = d.free.left > 0 ? 'До бесплатной доставки: ' + rub(d.free.left) : 'Бесплатная доставка включена';

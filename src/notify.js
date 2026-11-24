@@ -56,6 +56,7 @@ function createNotifier({ db, cfg, log = console }) {
     const where = o.delivery_kind === 'pickup' ? '' : [o.delivery_city, o.delivery_point || o.delivery_address].filter(Boolean).join(', ');
     lines.push(`Доставка: ${o.delivery_title}${where ? ' · ' + where : ''}${Number(o.delivery_cost) ? ` (${rub(Number(o.delivery_cost))})` : ''}`);
     lines.push(`Оплата: ${(PAY_METHODS[o.pay_method] || {}).title || o.pay_method}`);
+    if (Number(o.discount) > 0) lines.push(`${o.discount_note}: −${rub(Number(o.discount))}`);
     lines.push('', 'Состав:');
     for (const i of items) lines.push(`• ${i.title}${i.size ? ' · ' + i.size : ''} × ${i.qty} - ${rub(Number(i.price) * i.qty)}${Number(i.product_id) >= EXT_BASE ? ' [товар партнёра]' : ''}`);
     if (o.comment) lines.push('', `Комментарий: ${o.comment}`);

@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const { RESERVING, queueFilter } = require('./catalog');
 const { quote, cityAllowed, PAY_METHODS } = require('./delivery');
 const { normalizePhone, isEmail, str } = require('./util');
+const { computeDiscount } = require('./loyalty');
 const { isExtPid } = require('./ext');
 
 class OrderError extends Error {}
@@ -70,7 +71,8 @@ function validateCheckout(body, methods, points, subtotal, ext = null, payCodes 
 }
 
 // Создаёт заказ одной транзакцией. priced - результат cart.price() (только годные позиции).
-async function createOrder(db, { form, priced, catalog, idemKey, vid, sid, source, notifier, partner }) {
+// account - вошедший покупатель { customerId, pct, note, rules }: заказ записывается в его аккаунт, скидка лояльности считается здесь, на сервере
+async function createOrder(db, { form, priced, catalog, idemKey, vid, sid, source, notifier, partner, account }) {
   const lines = priced.lines.filter((l) => !l.gone && !l.out && l.qty > 0);
   if (!lines.length) throw new OrderError('Корзина пуста');
   // Товары партнёра: цена и наличие перепроверяются на их сайте прямо перед заказом (сайт партнёра недоступен - берём то, что есть)
@@ -104,25 +106,27 @@ async function createOrder(db, { form, priced, catalog, idemKey, vid, sid, sourc
       throw new OrderError('Пока вы оформляли заказ, часть товаров разобрали: ' +
         short.map((l) => `${l.model.title}, размер ${l.size.label}`).join('; ') + '. Обновите корзину');
     }
-    const cust = await c.query(
+    // Вошедший покупатель: заказ в его аккаунте, даже если получатель с другим телефоном. Гость: запись по телефону из формы.
+    const customerId = account ? account.customerId : (await c.query(
       `INSERT INTO webshop.customers (phone, name, email) VALUES ($1, $2, $3)
        ON CONFLICT (phone) DO UPDATE SET name = CASE WHEN webshop.customers.name = '' THEN EXCLUDED.name ELSE webshop.customers.name END,
                                          email = CASE WHEN webshop.customers.email = '' THEN EXCLUDED.email ELSE webshop.customers.email END
-       RETURNING id`, [form.phone, form.name, form.email]);
+       RETURNING id`, [form.phone, form.name, form.email])).rows[0].id;
     const seq = await c.query("SELECT nextval('webshop.order_number_seq')::text AS n");
     const number = seq.rows[0].n;
     const token = newToken();
     const subtotal = lines.reduce((a, l) => a + l.sum, 0);
     const d = form.delivery;
-    const total = subtotal + form.deliveryCost;
+    const discount = account && account.pct > 0 ? computeDiscount(lines, account.pct, account.rules).discount : 0;
+    const total = subtotal - discount + form.deliveryCost;
     const ins = await c.query(
       `INSERT INTO webshop.orders (number, token, idem_key, customer_id, name, phone, email, delivery_code, delivery_title, delivery_kind,
                                 delivery_city, delivery_address, delivery_point, delivery_door, delivery_cost, pay_method, subtotal, total,
-                                comment, vid, sid, source, delivery_meta)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING id`,
-      [number, token, idemKey || null, cust.rows[0].id, form.name, form.phone, form.email, d.code, d.title, d.kind,
+                                comment, vid, sid, source, delivery_meta, discount, discount_pct, discount_note)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26) RETURNING id`,
+      [number, token, idemKey || null, customerId, form.name, form.phone, form.email, d.code, d.title, d.kind,
         form.city, form.address, form.point, form.door, form.deliveryCost, form.pay, subtotal, total, form.comment, vid || '', sid || '', source || '',
-        form.meta ? JSON.stringify(form.meta) : null]);
+        form.meta ? JSON.stringify(form.meta) : null, discount, discount ? account.pct : 0, discount ? account.note : '']);
     const orderId = ins.rows[0].id;
     for (const l of lines) {
       await c.query(

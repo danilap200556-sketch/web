@@ -127,6 +127,7 @@ module.exports = function mount({ db, auth, render, fmt, chip, router, catalog, 
                 <td>${i.size}</td><td class="num">${rub(i.price)}</td><td class="num">${i.qty}</td><td class="num"><b>${rub(Number(i.price) * i.qty)}</b></td></tr>`)}
             </tbody><tfoot>
               <tr><td colspan="4" class="num muted">Товары</td><td class="num">${rub(o.subtotal)}</td></tr>
+              ${Number(o.discount) > 0 ? html`<tr><td colspan="4" class="num muted">${o.discount_note}</td><td class="num">−${rub(o.discount)}</td></tr>` : ''}
               <tr><td colspan="4" class="num muted">${o.delivery_title}</td><td class="num">${Number(o.delivery_cost) ? rub(o.delivery_cost) : 'бесплатно'}</td></tr>
               <tr class="tot"><td colspan="4" class="num">Итого</td><td class="num">${rub(o.total)}</td></tr></tfoot></table></div>
           </section>

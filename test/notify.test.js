@@ -1,30 +1,9 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const http = require('node:http');
-const { startShop, client, addProduct, adminLogin } = require('./helpers');
+const { startShop, client, addProduct, adminLogin, fakeTelegram } = require('./helpers');
 
 const TOKEN = '123456:TEST-token-abcdefghijklmnopqrstuvwxyz0123';
-
-// Поддельный Telegram Bot API: запоминает запросы, ответ можно переключать
-async function fakeTelegram() {
-  const calls = [];
-  const mode = { fail: 0, status: 200, body: null };
-  const server = http.createServer((req, res) => {
-    let raw = '';
-    req.on('data', (d) => { raw += d; });
-    req.on('end', () => {
-      const body = raw ? JSON.parse(raw) : {};
-      calls.push({ url: req.url, body });
-      if (mode.fail > 0) { mode.fail--; res.writeHead(500, { 'content-type': 'application/json' }); res.end(JSON.stringify({ ok: false, description: 'Internal Server Error' })); return; }
-      if (mode.body) { res.writeHead(mode.status, { 'content-type': 'application/json' }); res.end(JSON.stringify(mode.body)); return; }
-      res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, result: { message_id: calls.length } }));
-    });
-  });
-  await new Promise((r) => server.listen(0, '127.0.0.1', r));
-  return { calls, mode, url: `http://127.0.0.1:${server.address().port}`, close: () => new Promise((r) => server.close(r)) };
-}
 
 async function placeOrder(shop, pid, { phone = '89160000001', qty = 1, comment = '' } = {}) {
   const c = client(shop.base);

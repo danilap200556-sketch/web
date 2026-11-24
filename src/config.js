@@ -96,6 +96,8 @@ function load(env = process.env) {
       from: (env.SMTP_FROM || '').trim(),
     },
     notify: {
+      // Бот сам опрашивает Telegram (вход покупателей, команды). По умолчанию включён на боевом сервере; TELEGRAM_POLLING=off выключает.
+      botPolling: env.TELEGRAM_POLLING ? env.TELEGRAM_POLLING !== 'off' : prod,
       telegramBotUsername: (env.TELEGRAM_BOT_USERNAME || '').trim().replace(/^@/, ''),
       telegramToken: (env.TELEGRAM_BOT_TOKEN || '').trim(),
       telegramChatIds: (env.TELEGRAM_CHAT_ID || '').split(/[\s,;]+/).filter(Boolean),

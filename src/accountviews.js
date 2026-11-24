@@ -187,7 +187,8 @@ function orderRows(orders, fmt) {
 function accountHome({ customer, status, orders, fmt, shopName, botOn }) {
   return html`<section class="wrap cabinet">
     <p class="eyebrow">${icon('user')} Личный кабинет</p>
-    <h1>Здравствуйте, ${customer.name || formatPhone(customer.phone)}</h1>
+    <h1>${customer.name ? `Здравствуйте, ${customer.name}` : 'Здравствуйте!'}</h1>
+    <p class="muted cabinet__phone">${formatPhone(customer.phone)}</p>
     <div class="cabinet__grid">
       <div class="cabinet__side">
         ${status.enabled ? loyaltyCard({ status, shopName }) : ''}

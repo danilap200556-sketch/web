@@ -1,7 +1,8 @@
 'use strict';
 // Настройки магазина: доставка и оплата, сотрудники, контакты, свой пароль.
 const { html } = require('../html');
-const { str, slugify } = require('../util');
+const { str, slugify, normalizePhone } = require('../util');
+const { SmsError } = require('../sms');
 const sec = require('../security');
 const { ROLES } = require('./auth');
 const { telegramUrl } = require('../shopviews');
@@ -9,7 +10,7 @@ const { telegramUrl } = require('../shopviews');
 const KIND = { pickup: 'Самовывоз', courier: 'Курьер', tc: 'Транспортная компания' };
 const money = (v) => { const n = parseFloat(String(v ?? '').replace(',', '.').replace(/\s/g, '')); return Number.isFinite(n) && n >= 0 ? Math.min(n, 1e7) : 0; };
 
-module.exports = function mount({ db, auth, render, fmt, router, settings, delivery, notifier, carriers, cfg, payments }) {
+module.exports = function mount({ db, auth, render, fmt, router, settings, delivery, notifier, carriers, cfg, payments, sms, mail, bot }) {
   // ---------- Доставка и оплата ----------
   router.get('/delivery', auth.require('delivery'), async (req, res, next) => {
     try {
@@ -274,6 +275,42 @@ module.exports = function mount({ db, auth, render, fmt, router, settings, deliv
     } catch (e) { next(e); }
   });
 
+  // ---------- Вход покупателей: бот, SMS, почта ----------
+  async function loginCard(req) {
+    const chip = (ok, yes, no) => html`<span class="chip ${ok ? 'chip--green' : 'chip--gray'}">${ok ? yes : no}</span>`;
+    const name = bot.enabled() ? bot.knownName() : '';   // страница настроек не ходит в Telegram: имя видно, когда оно уже известно
+    const sent = (await db.query("SELECT COUNT(*)::int AS n FROM webshop.auth_codes WHERE channel = 'sms' AND created_at > NOW() - INTERVAL '1 day'")).rows[0].n;
+    return html`<section class="card card--pad"><h2>Вход покупателей</h2>
+      <p class="muted">Покупатель входит в личный кабинет по коду из Telegram или SMS либо по почте и паролю. Способы без настройки скрыты, остальные работают.</p>
+      <p><b>Telegram-бот:</b> ${chip(bot.enabled(), name ? `подключён, @${name}` : 'подключён', 'не настроен')}
+        ${bot.enabled() ? '' : html`<span class="muted">Задайте <code>TELEGRAM_BOT_TOKEN</code> в <code>.env</code> (бот у @BotFather).</span>`}</p>
+      <p><b>SMS:</b> ${chip(sms.enabled(), `SMS подключены (${cfg.sms.provider}), за сутки отправлено ${sent} из ${cfg.sms.dailyCap}`, 'SMS не настроены')}
+        ${sms.enabled() ? '' : html`<span class="muted">Задайте <code>SMS_PROVIDER=smsru</code> и <code>SMS_API_KEY</code> в <code>.env</code>.</span>`}</p>
+      <p><b>Почта:</b> ${chip(mail.enabled(), 'Почта подключена: сброс пароля и подтверждение адреса письмом', 'Почта не настроена')}
+        ${mail.enabled() ? '' : html`<span class="muted">Задайте <code>SMTP_HOST</code>, <code>SMTP_USER</code>, <code>SMTP_PASS</code>, <code>SMTP_FROM</code> в <code>.env</code>. Пока почты нет, пароль восстанавливается кодом из Telegram или SMS.</span>`}</p>
+      ${sms.enabled() ? html`<form method="post" action="/admin/settings/test-sms" class="inline">${req.adminCsrf}
+        <label class="field"><span class="sr">Телефон для проверки</span><input name="phone" type="tel" inputmode="tel" placeholder="+7 900 123-45-67" required></label>
+        <button class="btn" type="submit">Отправить тестовое SMS</button></form>` : ''}
+    </section>`;
+  }
+  router.post('/settings/test-sms', auth.require('settings'), async (req, res, next) => {
+    try {
+      const phone = normalizePhone(req.body.phone);
+      if (!sms.enabled()) res.flash('err', 'SMS не настроены: задайте SMS_PROVIDER и SMS_API_KEY в .env');
+      else if (!phone) res.flash('err', 'Укажите телефон в формате +7 900 123-45-67');
+      else {
+        try {
+          await sms.send(phone, `Проверка SMS: магазин ${(await settings.get()).shopName} подключён.`);
+          res.flash('ok', 'Тестовое SMS отправлено');
+        } catch (e) {
+          if (!(e instanceof SmsError)) throw e;
+          res.flash('err', `Не удалось отправить SMS: ${e.message}`);
+        }
+      }
+      res.redirect('/admin/settings');
+    } catch (e) { next(e); }
+  });
+
   // ---------- Настройки магазина ----------
   router.get('/settings', auth.require('settings'), async (req, res, next) => {
     try {
@@ -301,7 +338,8 @@ module.exports = function mount({ db, auth, render, fmt, router, settings, deliv
         <p>Модели, цены, фото и остатки сайт читает из общей базы приложения «Склад» (только чтение) и обновляет раз в полминуты. Размеры одной модели склеиваются по артикулу: <code>DD1391-100_42</code> - модель <code>DD1391-100</code>, размер 42. Заказы с сайта держат товар в резерве, пока их не отправили: после отправки списывайте его в приложении.</p>
         <p class="muted">Цены меняются в приложении. Здесь они не правятся.</p></section>
       ${await payCard(req)}
-      ${await notifyCard(req)}`;
+      ${await notifyCard(req)}
+      ${await loginCard(req)}`;
       await render(req, res, 'settings', { title: 'Настройки', body });
     } catch (e) { next(e); }
   });

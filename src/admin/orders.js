@@ -12,7 +12,7 @@ const NEXT_LABEL = { new: 'Подтвердить заказ', confirmed: 'От�
 
 const { EXT_BASE } = require('../ext');
 
-module.exports = function mount({ db, auth, render, fmt, chip, router, catalog, writeoff, partner }) {
+module.exports = function mount({ db, auth, render, fmt, chip, router, catalog, writeoff, partner, notifier }) {
   // ---------- Список ----------
   router.get('/orders', auth.require('orders'), async (req, res, next) => {
     try {
@@ -127,6 +127,7 @@ module.exports = function mount({ db, auth, render, fmt, chip, router, catalog, 
                 <td>${i.size}</td><td class="num">${rub(i.price)}</td><td class="num">${i.qty}</td><td class="num"><b>${rub(Number(i.price) * i.qty)}</b></td></tr>`)}
             </tbody><tfoot>
               <tr><td colspan="4" class="num muted">Товары</td><td class="num">${rub(o.subtotal)}</td></tr>
+              ${Number(o.discount) > 0 ? html`<tr><td colspan="4" class="num muted">${o.discount_note}</td><td class="num">−${rub(o.discount)}</td></tr>` : ''}
               <tr><td colspan="4" class="num muted">${o.delivery_title}</td><td class="num">${Number(o.delivery_cost) ? rub(o.delivery_cost) : 'бесплатно'}</td></tr>
               <tr class="tot"><td colspan="4" class="num">Итого</td><td class="num">${rub(o.total)}</td></tr></tfoot></table></div>
           </section>
@@ -204,9 +205,10 @@ module.exports = function mount({ db, auth, render, fmt, chip, router, catalog, 
         await c.query('UPDATE webshop.orders SET status = $2, updated_at = NOW() WHERE id = $1', [id, status]);
         await c.query("INSERT INTO webshop.order_events (order_id, admin_name, kind, text) VALUES ($1, $2, 'status', $3)",
           [id, who(req), `Статус: ${STATUSES[cur.status].title} → ${STATUSES[status].title}${note ? '. ' + note : ''}`]);
+        await notifier.enqueueCustomerStatus(c, id, status);   // сообщение покупателю в Telegram, если он привязал
         return cur.status;
       });
-      if (changed) await writeoff.sync().catch(() => {}); // очередь списания в приложении: собран - поставить, отменён - снять
+      if (changed) { notifier.kick(); await writeoff.sync().catch(() => {}); } // очередь списания в приложении: собран - поставить, отменён - снять
       catalog.invalidate();
       res.flash('ok', changed ? `Статус изменён: ${STATUSES[status].title}` : 'Статус не изменился');
       res.redirect(`/admin/orders/${id}`);

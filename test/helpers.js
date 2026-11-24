@@ -1,5 +1,7 @@
 'use strict';
 // Общее для интеграционных тестов: отдельная база, схема склада, магазин на случайном порту, клиент с cookie.
+const http = require('node:http');
+const assert = require('node:assert/strict');
 const { Client } = require('pg');
 const sharp = require('sharp');
 const { load } = require('../src/config');
@@ -114,4 +116,79 @@ async function adminLogin(base, username, password) {
   return { c, csrf };
 }
 
-module.exports = { startShop, client, addProduct, addSitePrice, ymd, addAdmin, adminLogin, jpeg };
+// Поддельный SMS.ru: запоминает отправленное, ответ можно переключить (mode.fail - ответ с ошибкой, mode.http - код ответа)
+async function fakeSmsRu() {
+  const calls = [];
+  const mode = { fail: false, http: 200 };
+  const server = http.createServer((req, res) => {
+    const u = new URL(req.url, 'http://x');
+    if (u.pathname !== '/sms/send') { res.writeHead(404); return res.end(); }
+    const call = { apiId: u.searchParams.get('api_id'), to: u.searchParams.get('to'), msg: u.searchParams.get('msg'), from: u.searchParams.get('from') };
+    calls.push(call);
+    res.writeHead(mode.http, { 'content-type': 'application/json' });
+    if (mode.http !== 200) return res.end('{}');
+    if (mode.fail) return res.end(JSON.stringify({ status: 'ERROR', status_code: 200, status_text: 'Неправильный api_id' }));
+    res.end(JSON.stringify({ status: 'OK', status_code: 100, sms: { [call.to]: { status: 'OK', status_code: 100, sms_id: `000000-${calls.length}` } }, balance: 100 }));
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  return { calls, mode, url: `http://127.0.0.1:${server.address().port}`, close: () => new Promise((r) => server.close(r)) };
+}
+
+// Поддельный Telegram Bot API: запоминает запросы (calls), отдаёт очередь обновлений (updates) на getUpdates,
+// ответ можно переключать: mode.fail (число ответов 500), mode.body/status (свой ответ), mode.conflict (409 на getUpdates),
+// mode.blocked (чаты, где бот заблокирован: 403).
+async function fakeTelegram() {
+  const calls = [];
+  const updates = [];
+  const mode = { fail: 0, status: 200, body: null, conflict: false, blocked: new Set() };
+  const server = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', (d) => { raw += d; });
+    req.on('end', () => {
+      const body = raw ? JSON.parse(raw) : {};
+      calls.push({ url: req.url, body });
+      const method = req.url.split('/').pop();
+      const json = (status, obj) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
+      if (method === 'getMe') return json(200, { ok: true, result: { id: 1, is_bot: true, username: 'solehouse_test_bot' } });
+      if (method === 'getUpdates') {
+        if (mode.conflict) return json(409, { ok: false, error_code: 409, description: 'Conflict: terminated by other getUpdates request' });
+        return json(200, { ok: true, result: updates.splice(0) });
+      }
+      if (mode.blocked.has(String(body.chat_id))) return json(403, { ok: false, error_code: 403, description: 'Forbidden: bot was blocked by the user' });
+      if (mode.fail > 0) { mode.fail--; return json(500, { ok: false, description: 'Internal Server Error' }); }
+      if (mode.body) return json(mode.status, mode.body);
+      json(200, { ok: true, result: { message_id: calls.length } });
+    });
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  return { calls, updates, mode, url: `http://127.0.0.1:${server.address().port}`, close: () => new Promise((r) => server.close(r)) };
+}
+
+// Покупатель уже вошёл: подтверждённый клиент, сессия, cookie в клиенте. fresh - сессия «по коду» (15 минут можно менять пароль без старого).
+async function loginAs(shop, c, phone, { name = 'Тест', fresh = false } = {}) {
+  const { accounts, sessions } = shop.services;
+  const { customer } = await accounts.ensureByVerifiedPhone(phone, { name });
+  const token = await sessions.create(customer.id, { ip: '127.0.0.1', ua: 'test', fresh });
+  c.jar.set(sessions.cookieName, token);
+  return customer;
+}
+
+let placeSeq = 0;
+// Оформляет заказ самовывозом с оплатой при получении (c - клиент с cookie, чтобы заказывать вошедшим; pid - один товар или список)
+async function placeOrder(shop, pid, { phone = '89160000001', qty = 1, comment = '', c = client(shop.base), delivery = 'pickup', name = 'Анна', pay = 'cod' } = {}) {
+  await c.get('/');
+  for (const p of [].concat(pid)) for (let i = 0; i < qty; i++) await c.post('/cart/add', { pid: p });
+  const co = (await c.get('/checkout')).text;
+  // Сайт ограничивает число заказов с одного адреса; при TRUST_PROXY каждому заказу даём «свой» адрес
+  const h = shop.cfg.trustProxy ? { headers: { 'x-forwarded-for': `10.9.${(++placeSeq >> 8) & 255}.${placeSeq & 255}` } } : {};
+  const r = await c.post('/checkout', {
+    idem: /name="idem" value="([^"]+)"/.exec(co)[1], name, phone, delivery,
+    point: /name="point" value="(\d+)"/.exec(co)[1], pay, consent: '1', comment,
+  }, h);
+  assert.equal(r.status, 303, r.text.slice(0, 200));
+  const number = /\/order\/(\d+)/.exec(r.location)[1];
+  const orderId = (await shop.db.query('SELECT id FROM webshop.orders WHERE number = $1', [number])).rows[0].id;
+  return { number, orderId, location: r.location, c };
+}
+
+module.exports = { placeOrder, loginAs, fakeTelegram, fakeSmsRu, startShop, client, addProduct, addSitePrice, ymd, addAdmin, adminLogin, jpeg };

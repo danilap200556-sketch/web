@@ -5,6 +5,8 @@ const { rub, num, plural, formatPhone, normalizePhone, clampInt, str } = require
 const { STATUSES } = require('../orders');
 const { NOT_VALID } = require('./stats');
 const { pager, stat } = require('./layout');
+const { can } = require('./auth');
+const { tierFor, effectivePct } = require('../loyalty');
 
 const PAGE = 25;
 const VIP_SUM = 100000;
@@ -25,7 +27,7 @@ const SORTS = {
   created: ['Новые клиенты', 'c.created_at DESC'],
 };
 
-module.exports = function mount({ db, auth, render, fmt, chip, router }) {
+module.exports = function mount({ db, auth, render, fmt, chip, router, settings, loyalty }) {
   router.get('/customers', auth.require('customers'), async (req, res, next) => {
     try {
       const q = str(req.query.q, 60);
@@ -47,7 +49,9 @@ module.exports = function mount({ db, auth, render, fmt, chip, router }) {
         new: '(COUNT(o.id) FILTER (WHERE o.status <> ALL($1)) = 1 AND COALESCE(SUM(o.total) FILTER (WHERE o.status <> ALL($1)), 0) < $2)',
         none: 'COUNT(o.id) FILTER (WHERE o.status <> ALL($1)) = 0' }[seg];
       const base = `FROM webshop.customers c LEFT JOIN webshop.orders o ON o.customer_id = c.id ${where.length ? 'WHERE ' + where.join(' AND ') : ''} GROUP BY c.id ${having ? 'HAVING ' + having : ''}`;
-      const sel = `SELECT c.id, c.name, c.phone, c.email, c.created_at,
+      const rules = (await settings.get()).loyalty;
+      const sel = `SELECT c.id, c.name, c.phone, c.email, c.created_at, c.personal_discount,
+                    COALESCE(SUM(o.subtotal - o.discount) FILTER (WHERE o.status = 'delivered'), 0) AS loy_spent,
                     COUNT(o.id) FILTER (WHERE o.status <> ALL($1))::int AS orders, COALESCE(SUM(o.total) FILTER (WHERE o.status <> ALL($1)), 0) AS spent,
                     MAX(o.created_at) AS last_order, $2::numeric AS vip_sum`;
       const [rows, cnt, tot] = await Promise.all([
@@ -83,11 +87,11 @@ module.exports = function mount({ db, auth, render, fmt, chip, router }) {
       </form>
       <section class="card">
         <header class="card__h"><p class="muted">Найдено: <b>${num(cnt.rows[0].n)}</b> ${plural(cnt.rows[0].n, 'клиент', 'клиента', 'клиентов')}. VIP: от 5 заказов или от ${rub(VIP_SUM)}</p></header>
-        ${rows.rows.length ? html`<div class="tablewrap"><table class="table table--rows"><thead><tr><th>Клиент</th><th>Контакты</th><th>Сегмент</th><th class="num">Заказов</th><th class="num">Сумма</th><th class="num">Средний чек</th><th>Последний заказ</th></tr></thead><tbody>
+        ${rows.rows.length ? html`<div class="tablewrap"><table class="table table--rows"><thead><tr><th>Клиент</th><th>Контакты</th><th>Сегмент</th><th>Уровень</th><th class="num">Заказов</th><th class="num">Сумма</th><th class="num">Средний чек</th><th>Последний заказ</th></tr></thead><tbody>
           ${rows.rows.map((c) => { const sg = segmentOf(c.orders, Number(c.spent)); return html`<tr class="clickrow" data-href="/admin/customers/${c.id}">
             <td><a href="/admin/customers/${c.id}"><b>${c.name || 'Без имени'}</b></a></td>
             <td>${formatPhone(c.phone)}${c.email ? html`<br><small class="muted">${c.email}</small>` : ''}</td>
-            <td>${segChip(sg)}</td><td class="num">${c.orders}</td><td class="num"><b>${rub(c.spent)}</b></td>
+            <td>${segChip(sg)}</td><td>${rules.enabled ? html`${tierFor(rules, Number(c.loy_spent)).tier.name} <small class="muted">${effectivePct(rules, Number(c.loy_spent), c.personal_discount)}%</small>` : '-'}</td><td class="num">${c.orders}</td><td class="num"><b>${rub(c.spent)}</b></td>
             <td class="num">${c.orders ? rub(Number(c.spent) / c.orders) : '-'}</td><td>${c.last_order ? fmt.date(c.last_order) : '-'}</td></tr>`; })}</tbody></table></div>
           ${pager('/admin/customers?' + keep({ page: '' }), page, pages)}` : html`<p class="empty-note">Клиентов по этим условиям нет.</p>`}
       </section>`;
@@ -111,6 +115,7 @@ module.exports = function mount({ db, auth, render, fmt, chip, router }) {
       const spent = valid.reduce((a, o) => a + Number(o.total), 0);
       const sg = segmentOf(valid.length, spent);
       const first = orders.rows[orders.rows.length - 1];
+      const ls = await loyalty.statusOf(c);
       const body = html`
       <div class="stats stats--4">
         ${stat({ label: 'Заказов', value: valid.length, note: orders.rows.length !== valid.length ? `ещё ${orders.rows.length - valid.length} отменено` : 'без отмен' })}
@@ -126,6 +131,13 @@ module.exports = function mount({ db, auth, render, fmt, chip, router }) {
           <section class="card card--pad"><h2>${c.name || 'Без имени'}</h2><p>${segChip(sg)}</p>
             <p><a href="tel:+${c.phone}">${formatPhone(c.phone)}</a></p>${c.email ? html`<p><a href="mailto:${c.email}">${c.email}</a></p>` : ''}
             ${cities.rows.length ? html`<p class="muted">Города доставки: ${cities.rows.map((x) => x.city).join(', ')}</p>` : ''}</section>
+          <section class="card card--pad"><h2>Лояльность</h2>
+            <p>Карта <b>${ls.cardNo}</b> · уровень <b>${ls.tier.name}</b>, скидка <b>${ls.pct}%</b></p>
+            <p class="muted">Накоплено ${rub(ls.spent)} по полученным заказам. ${ls.next ? `До «${ls.next.name}» ещё ${rub(ls.toNext)}.` : 'Высший уровень.'}</p>
+            <p class="muted">Телефон ${c.phone_verified_at ? 'подтверждён' : 'не подтверждён'} · Telegram: ${c.telegram_id ? 'привязан' : 'не привязан'}${c.telegram_id && !c.tg_notify ? ' (уведомления выключены)' : ''}</p>
+            ${can(req.admin.user.role, 'loyalty') ? html`<form method="post" action="/admin/customers/${c.id}/discount">${req.adminCsrf}
+              <label class="field">Личная скидка, % <span class="muted">(0 - нет; действует вместо уровня, если больше)</span><input name="percent" value="${Number(c.personal_discount) || ''}" inputmode="decimal" maxlength="6" placeholder="0"></label>
+              <button class="btn btn--block" type="submit">Сохранить скидку</button></form>` : (Number(c.personal_discount) ? html`<p>Личная скидка: <b>${Number(c.personal_discount)}%</b></p>` : '')}</section>
           <section class="card card--pad"><h2>Заметка о клиенте</h2>
             <form method="post" action="/admin/customers/${c.id}/note">${req.adminCsrf}
               <label class="field"><span class="sr">Заметка</span><textarea name="note" rows="4" maxlength="1000" placeholder="Любит замшу, просит звонить после 18:00...">${c.note}</textarea></label>
@@ -133,6 +145,20 @@ module.exports = function mount({ db, auth, render, fmt, chip, router }) {
         </aside>
       </div>`;
       await render(req, res, 'customers', { title: c.name || formatPhone(c.phone), body, wide: true, actions: html`<a class="btn btn--ghost btn--sm" href="/admin/customers">${icon('chevron-left')} К списку</a>` });
+    } catch (e) { next(e); }
+  });
+
+  router.post('/customers/:id/discount', auth.require('loyalty'), async (req, res, next) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const raw = String(req.body.percent ?? '').replace(',', '.').trim();
+      const pct = raw === '' ? 0 : Number(raw);
+      if (!Number.isFinite(pct) || pct < 0 || pct > 100) res.flash('err', 'Личная скидка: число от 0 до 100');
+      else {
+        await db.query('UPDATE webshop.customers SET personal_discount = $2 WHERE id = $1', [id, Math.round(pct * 100) / 100]);
+        res.flash('ok', pct ? `Личная скидка ${pct}% сохранена` : 'Личная скидка снята');
+      }
+      res.redirect(`/admin/customers/${id}`);
     } catch (e) { next(e); }
   });
 

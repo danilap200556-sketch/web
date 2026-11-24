@@ -1,45 +1,10 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const http = require('node:http');
-const { startShop, client, addProduct, adminLogin } = require('./helpers');
+const { startShop, client, addProduct, adminLogin, fakeTelegram, placeOrder } = require('./helpers');
 
 const TOKEN = '123456:TEST-token-abcdefghijklmnopqrstuvwxyz0123';
 
-// Поддельный Telegram Bot API: запоминает запросы, ответ можно переключать
-async function fakeTelegram() {
-  const calls = [];
-  const mode = { fail: 0, status: 200, body: null };
-  const server = http.createServer((req, res) => {
-    let raw = '';
-    req.on('data', (d) => { raw += d; });
-    req.on('end', () => {
-      const body = raw ? JSON.parse(raw) : {};
-      calls.push({ url: req.url, body });
-      if (mode.fail > 0) { mode.fail--; res.writeHead(500, { 'content-type': 'application/json' }); res.end(JSON.stringify({ ok: false, description: 'Internal Server Error' })); return; }
-      if (mode.body) { res.writeHead(mode.status, { 'content-type': 'application/json' }); res.end(JSON.stringify(mode.body)); return; }
-      res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, result: { message_id: calls.length } }));
-    });
-  });
-  await new Promise((r) => server.listen(0, '127.0.0.1', r));
-  return { calls, mode, url: `http://127.0.0.1:${server.address().port}`, close: () => new Promise((r) => server.close(r)) };
-}
-
-async function placeOrder(shop, pid, { phone = '89160000001', qty = 1, comment = '' } = {}) {
-  const c = client(shop.base);
-  await c.get('/');
-  for (let i = 0; i < qty; i++) await c.post('/cart/add', { pid });
-  const co = (await c.get('/checkout')).text;
-  const r = await c.post('/checkout', {
-    idem: /name="idem" value="([^"]+)"/.exec(co)[1], name: 'Анна', phone, delivery: 'pickup',
-    point: /name="point" value="(\d+)"/.exec(co)[1], pay: 'cod', consent: '1', comment,
-  });
-  assert.equal(r.status, 303, r.text.slice(0, 200));
-  const number = /\/order\/(\d+)/.exec(r.location)[1];
-  const orderId = (await shop.db.query('SELECT id FROM webshop.orders WHERE number = $1', [number])).rows[0].id;
-  return { number, orderId };
-}
 const waitFor = async (fn, ms = 4000) => {
   const end = Date.now() + ms;
   for (;;) { const v = await fn(); if (v) return v; if (Date.now() > end) throw new Error('не дождались'); await new Promise((r) => setTimeout(r, 25)); }

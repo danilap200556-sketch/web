@@ -8,10 +8,11 @@ const { card } = require('../shopviews');
 const sec = require('../security');
 const cartLib = require('../cart');
 const { quote, PAY_METHODS } = require('../delivery');
+const { computeDiscount } = require('../loyalty');
 const { OrderError, STATUSES, FLOW, validateCheckout, createOrder, getOrderByToken } = require('../orders');
 const { photoUrl } = require('../shopviews');
 
-module.exports = function mount(app, { cfg, db, catalog, carts, tracker, delivery, notifier, carriers, payments, partner }, shopCtx, send) {
+module.exports = function mount(app, { cfg, db, settings, catalog, carts, tracker, delivery, notifier, carriers, payments, partner }, shopCtx, send) {
   const { cartName, cartCountName, cookieOpts } = app.locals.cookies;
   const fmt = dateFmt(cfg.tz);
   const orderLimiter = new sec.RateLimiter(8, 10 * 60_000);
@@ -19,6 +20,26 @@ module.exports = function mount(app, { cfg, db, catalog, carts, tracker, deliver
   const wantsJson = (req) => req.get('x-fetch') === '1' || /json/.test(req.get('accept') || '') && !/html/.test(req.get('accept') || '');
   const setCount = (res, n) => res.cookie(cartCountName, String(n), cookieOpts(60 * 86400_000));
   const token = (req) => (req.cookies[cartName] && req.cookies[cartName].length < 60 ? req.cookies[cartName] : '');
+
+  // Скидка лояльности вошедшего покупателя на позиции корзины: { pct, discount, note, rules }. Гостю и без скидки - нули.
+  async function loyaltyFor(req, lines) {
+    const c = req.ctx.customer;
+    if (!c || !c.status.enabled || c.status.pct <= 0) return { pct: 0, discount: 0, note: '', rules: null };
+    const rules = (await settings.get()).loyalty;
+    const st = c.status;
+    return {
+      pct: st.pct, rules, discount: computeDiscount(lines, st.pct, rules).discount,
+      note: st.personal >= st.tier.percent ? `Личная скидка ${st.pct}%` : `Скидка «${st.tier.name}» ${st.pct}%`,
+    };
+  }
+  const okLines = (priced) => priced.lines.filter((l) => !l.gone && !l.out && l.qty > 0);
+  // Гостю: приглашение войти ради скидки (только если вход настроен и лояльность включена)
+  const inviteHint = (ctx) => {
+    const rules = ctx.settings.loyalty;
+    const top = rules && rules.enabled ? Math.max(0, ...rules.tiers.map((t) => t.percent)) : 0;
+    if (ctx.customer || !ctx.loginEnabled || !top) return '';
+    return html`<p class="loyalty-hint">${icon('user')} <a class="link" href="/login?next=%2Fcheckout">Войдите</a>: скидка до ${top}% для постоянных покупателей</p>`;
+  };
 
   async function loadCart(req) {
     await catalog.ensure();
@@ -42,6 +63,7 @@ module.exports = function mount(app, { cfg, db, catalog, carts, tracker, deliver
       const pct = free ? Math.min(100, Math.round((priced.subtotal / free) * 100)) : 0;
       const lines = priced.lines.filter((l) => !l.gone);
       const payChips = (await payments.methods()).filter((c) => PAY_METHODS[c].needsPrepay);
+      const loy = await loyaltyFor(req, okLines(priced));
       const first = lines.find((l) => l.model);
       const recs = [...(first ? catalog.related(first.model, 4) : []), ...catalog.newest(8, (m) => m.cover)]
         .filter((m, i, a) => a.indexOf(m) === i && !lines.some((l) => l.model === m)).slice(0, 4);
@@ -71,7 +93,10 @@ module.exports = function mount(app, { cfg, db, catalog, carts, tracker, deliver
           </div>
           <aside class="summary">
             <h2>Ваш заказ</h2>
-            <dl class="sumrows"><dt>Товары</dt><dd>${rub(priced.subtotal)}</dd><dt>Доставка</dt><dd class="muted">рассчитаем на следующем шаге</dd></dl>
+            <dl class="sumrows"><dt>Товары</dt><dd>${rub(priced.subtotal)}</dd>
+              ${loy.discount ? html`<dt>Скидка ${loy.pct}%</dt><dd class="sumrows__disc">−${rub(loy.discount)}</dd>` : ''}
+              <dt>Доставка</dt><dd class="muted">рассчитаем на следующем шаге</dd></dl>
+            ${inviteHint(ctx)}
             ${free ? html`<div class="freebar">
               <p>${left > 0 ? html`До бесплатной доставки осталось <b>${rub(left)}</b>` : html`${icon('check')} Бесплатная доставка включена`}</p>
               <svg viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><rect class="freebar__bg" width="100" height="6" rx="3"/><rect class="freebar__fg" width="${pct}" height="6" rx="3"/></svg>
@@ -103,8 +128,9 @@ module.exports = function mount(app, { cfg, db, catalog, carts, tracker, deliver
         qty: l.qty, max: l.max, price: l.price, sum: l.sum, img: l.model.cover ? photoUrl(l.model.cover, 360) : '', out: Boolean(l.out),
       }));
       const ft = req.ctx.freeFrom;
+      const loy = await loyaltyFor(req, okLines(priced));
       res.json({
-        count: priced.count, subtotal: priced.subtotal, lines,
+        count: priced.count, subtotal: priced.subtotal, discount: loy.discount, discountPct: loy.discount ? loy.pct : 0, lines,
         free: ft ? { threshold: ft, left: Math.max(0, ft - priced.subtotal), pct: Math.min(100, Math.round((priced.subtotal / ft) * 100)) } : null,
       });
     } catch (e) { next(e); }
@@ -180,6 +206,9 @@ module.exports = function mount(app, { cfg, db, catalog, carts, tracker, deliver
     const sel = methods.find((m) => m.code === form.delivery) || methods[0];
     const selDoor = sel && (sel.kind === 'courier' || (sel.kind === 'tc' && form.mode === 'door'));
     const selQ = sel ? quote(sel, priced.subtotal, selDoor) : { price: 0 };
+    const loy = await loyaltyFor(req, lines);
+    // Вошедшему подставляем контакты из профиля (если форму не вернули с ошибкой и она не пустая)
+    if (req.customer && !form.name && !form.phone && !form.email) { form.name = req.customer.name; form.phone = formatPhone(req.customer.phone); form.email = req.customer.email; }
     const kindIcon = { pickup: 'store', courier: 'truck', tc: 'box' };
     const body = html`
     <section class="wrap checkout">
@@ -269,9 +298,11 @@ module.exports = function mount(app, { cfg, db, catalog, carts, tracker, deliver
           </ul>
           <dl class="sumrows">
             <dt>Товары</dt><dd data-sum-sub data-value="${priced.subtotal}">${rub(priced.subtotal)}</dd>
+            ${loy.discount ? html`<dt>Скидка ${loy.pct}%</dt><dd class="sumrows__disc" data-sum-discount data-value="${loy.discount}">−${rub(loy.discount)}</dd>` : ''}
             <dt>Доставка</dt><dd data-sum-delivery>${selQ.price ? rub(selQ.price) : 'Бесплатно'}</dd>
-            <dt class="sumrows__total">Итого</dt><dd class="sumrows__total" data-sum-total>${rub(priced.subtotal + selQ.price)}</dd>
+            <dt class="sumrows__total">Итого</dt><dd class="sumrows__total" data-sum-total>${rub(priced.subtotal - loy.discount + selQ.price)}</dd>
           </dl>
+          ${inviteHint(ctx)}
           <button class="btn btn--lg btn--block" type="submit" data-submit>Оформить заказ</button>
           <p class="muted summary__note">Менеджер свяжется с вами, чтобы подтвердить заказ.</p>
         </aside>
@@ -296,7 +327,8 @@ module.exports = function mount(app, { cfg, db, catalog, carts, tracker, deliver
       if (!m) return res.status(404).json({ error: 'Нет такого способа' });
       const door = m.kind === 'courier' || (m.kind === 'tc' && req.query.mode === 'door');
       const q = quote(m, priced.subtotal, door);
-      res.json({ price: q.price, total: priced.subtotal + q.price, free: q.free });
+      const loy = await loyaltyFor(req, okLines(priced));
+      res.json({ price: q.price, total: priced.subtotal - loy.discount + q.price, free: q.free });
     } catch (e) { next(e); }
   });
 
@@ -421,9 +453,11 @@ module.exports = function mount(app, { cfg, db, catalog, carts, tracker, deliver
       const who = tracker.who(req);
       await tracker.flush();
       const src = who.sid ? await db.query("SELECT source FROM webshop.visits WHERE sid = $1 AND source <> '' ORDER BY at LIMIT 1", [who.sid]) : { rows: [] };
+      const loy = await loyaltyFor(req, lines);
+      const account = req.customer ? { customerId: req.customer.id, pct: loy.pct, note: loy.note, rules: loy.rules } : null;
       let order;
       try {
-        order = await createOrder(db, { form: data, priced, catalog, notifier, partner, idemKey: String(form.delivery ? req.body.idem || '' : '').slice(0, 40) || null, vid: who.vid, sid: who.sid, source: src.rows[0]?.source || '' });
+        order = await createOrder(db, { form: data, priced, catalog, notifier, partner, account, idemKey: String(form.delivery ? req.body.idem || '' : '').slice(0, 40) || null, vid: who.vid, sid: who.sid, source: src.rows[0]?.source || '' });
       } catch (e) {
         if (!(e instanceof OrderError)) throw e;
         return renderCheckout(req, res, { form, error: e.message, status: 409 });
@@ -468,6 +502,7 @@ module.exports = function mount(app, { cfg, db, catalog, carts, tracker, deliver
             <h2>Детали</h2>
             <dl class="sumrows">
               <dt>Товары</dt><dd>${rub(o.subtotal)}</dd>
+              ${Number(o.discount) > 0 ? html`<dt>Скидка ${Number(o.discount_pct)}%</dt><dd class="sumrows__disc">−${rub(o.discount)}</dd>` : ''}
               <dt>${o.delivery_title}</dt><dd>${Number(o.delivery_cost) ? rub(o.delivery_cost) : 'Бесплатно'}</dd>
               <dt class="sumrows__total">Итого</dt><dd class="sumrows__total">${rub(o.total)}</dd>
             </dl>

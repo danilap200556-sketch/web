@@ -142,6 +142,14 @@ function telegramUrl(v) {
 }
 
 // Оболочка публичной страницы
+// Значок входа в шапке: «Войти» или «Личный кабинет»; пока вход не настроен (ни SMS, ни бота), его нет
+function accountLink(ctx) {
+  if (!ctx.loginEnabled && !ctx.customer) return '';
+  return ctx.customer
+    ? html`<a class="iconbtn" href="/account" aria-label="Личный кабинет">${icon('user')}</a>`
+    : html`<a class="iconbtn" href="/login" aria-label="Войти">${icon('user')}</a>`;
+}
+
 function shopPage(ctx, { title, description = '', canonical = '', og = null, body, bodyClass = '', noindex = false, jsonLd = null }) {
   const s = ctx.settings;
   const fullTitle = title ? `${title} - ${s.shopName}` : `${s.shopName}: кроссовки, одежда и аксессуары`;
@@ -175,6 +183,7 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
   <link rel="stylesheet" href="/static/css/shop.css?v=${ctx.assetV}">
   <link rel="stylesheet" href="/static/css/design.css?v=${ctx.assetV}">
   <link rel="stylesheet" href="/static/css/v4.css?v=${ctx.assetV}">
+  <link rel="stylesheet" href="/static/css/account.css?v=${ctx.assetV}">
   <script src="/static/js/boot.js?v=${ctx.assetV}"></script>
   ${jsonLd ? html`<script type="application/ld+json">${raw(JSON.stringify(jsonLd).replace(/</g, '\\u003c'))}</script>` : ''}
 </head>
@@ -214,6 +223,7 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
       <button class="headsearch" type="button" data-search-open aria-label="Поиск">${icon('search')}<span>Поиск: модель, бренд или артикул</span><kbd>/</kbd></button>
       <div class="head__tools">
         <button class="iconbtn head__find" type="button" data-search-open aria-label="Поиск">${icon('search')}</button>
+        ${accountLink(ctx)}
         <a class="iconbtn favbtn" href="/favorites" aria-label="Избранное">${icon('heart')}<span class="cartbtn__n${ctx.favCount ? '' : ' is-empty'}" data-fav-count>${ctx.favCount || ''}</span></a>
         <a class="iconbtn cartbtn" href="/cart" aria-label="Корзина">${icon('bag')}<span class="cartbtn__n${ctx.cartCount ? '' : ' is-empty'}" data-cart-count>${ctx.cartCount || ''}</span><span class="cartbtn__t">Корзина</span></a>
       </div>
@@ -244,6 +254,7 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
       <nav class="drawer__nav" aria-label="Разделы">
         ${navLinks(ctx)}
         <a class="nav__link" href="/favorites">Избранное${ctx.favCount ? html` <small class="drawer__badge">${ctx.favCount}</small>` : ''}</a>
+        ${ctx.loginEnabled || ctx.customer ? html`<a class="nav__link" href="${ctx.customer ? '/account' : '/login'}">${ctx.customer ? 'Личный кабинет' : 'Войти'}</a>` : ''}
         <a class="nav__link" href="/cart">Корзина${ctx.cartCount ? html` <small class="drawer__badge">${ctx.cartCount}</small>` : ''}</a>
       </nav>
       <div class="drawer__foot">
@@ -261,6 +272,7 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
       <div class="minicart__body" data-mini-body></div>
       <footer class="minicart__foot" hidden>
         <div class="minicart__sum"><span>Товары</span><b data-mini-sum></b></div>
+        <div class="minicart__sum minicart__sum--disc" data-mini-disc-row hidden><span data-mini-disc-label>Скидка</span><b data-mini-disc></b></div>
         <p class="minicart__note">Доставку и скидки посчитаем на следующем шаге</p>
         <a class="btn btn--lg btn--block" href="/checkout">Оформить заказ ${icon('arrow-right')}</a>
         <a class="link link--center" href="/cart">Открыть корзину</a>
@@ -270,7 +282,7 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
   <main id="main">${body}</main>
   <section class="subscribe">
     <div class="wrap subscribe__in">
-      <div><b>Новинки и скидки первыми</b><span>Подпишитесь на наш Telegram: поступления, размеры и закрытые распродажи.</span></div>
+      <div><b>Новинки и скидки первыми</b><span>${tg ? 'Подпишитесь на наш Telegram: поступления, размеры и закрытые распродажи.' : 'Новые поступления каждую неделю: размеры и цены обновляются сами.'}</span></div>
       ${tg ? html`<a class="btn btn--light" href="${tg}" rel="noopener" target="_blank">${icon('send')} Подписаться</a>` : html`<a class="btn btn--light" href="/catalog?sort=new">Смотреть новинки ${icon('arrow-right')}</a>`}
     </div>
   </section>

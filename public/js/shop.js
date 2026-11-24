@@ -224,6 +224,8 @@
   if (co) {
     const rub = (n) => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' ₽';
     const subtotal = parseFloat($('[data-sum-sub]', co).dataset.value) || 0;
+    const discountEl = $('[data-sum-discount]', co);
+    const discount = discountEl ? parseFloat(discountEl.dataset.value) || 0 : 0;
     const methods = $$('[data-method]', co);
     const paneP = $('[data-pane="pickup"]', co);
     const paneA = $('[data-pane="address"]', co);
@@ -289,7 +291,7 @@
       let price = free ? 0 : m.price + (door ? m.doorExtra : 0);
       if (useApi && api.quote && api.key === quoteKey(m)) price = api.quote.price;
       $('[data-sum-delivery]', co).textContent = price ? rub(price) : 'Бесплатно';
-      $('[data-sum-total]', co).textContent = rub(subtotal + price);
+      $('[data-sum-total]', co).textContent = rub(subtotal - discount + price);
       // Город и ограничения курьера
       const list = String(m.cities || '').split(',').map(norm).filter(Boolean);
       const bad = list.length && cityIn.value.trim() && !list.includes(norm(cityIn.value));

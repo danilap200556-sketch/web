@@ -1,5 +1,6 @@
 'use strict';
 // Настройки магазина: каждая лежит строкой в webshop.settings (JSON). Читаются с кэшем на 10 секунд.
+const { DEFAULT_LOYALTY } = require('./loyalty');
 const TTL = 10_000;
 
 function defaults(cfg) {
@@ -22,6 +23,7 @@ function defaults(cfg) {
     electronicsTeaser: true,      // плашка «скоро электроника» на главной
     freeShippingNote: true,       // показывать порог бесплатной доставки в шапке
     notifyEmail: '',
+    loyalty: DEFAULT_LOYALTY,     // уровни и правила накопительной скидки покупателей (админка «Лояльность»)
     electronics: { markupPct: 0, showOldPrice: false },  // наценка к ценам партнёра, % (0 - цена как у партнёра)
     // Оплата. Ссылка СБП (QR НСПК) и реквизиты правятся в админке («Настройки»). Нужны для QR-кода, перевода по реквизитам и платёжки.
     payment: {

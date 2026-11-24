@@ -5,6 +5,7 @@
 const { rub, formatPhone } = require('./util');
 const { PAY_METHODS } = require('./delivery');
 const { EXT_BASE } = require('./ext');
+const { STATUSES } = require('./orders');
 
 const BACKOFF_SEC = [30, 120, 600, 1800, 3600];
 const MAX_ATTEMPTS = 14;
@@ -12,7 +13,7 @@ const LEASE_SEC = 120;        // пока строку отправляет од
 const SEND_TIMEOUT_MS = 8000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-function createNotifier({ db, cfg, log = console }) {
+function createNotifier({ db, cfg, bot = null, log = console }) {
   const n = cfg.notify || {};
   const token = n.telegramToken || '';
   const chats = n.telegramChatIds || [];
@@ -21,6 +22,8 @@ function createNotifier({ db, cfg, log = console }) {
   const state = { running: false, timer: null };
 
   const enabled = () => Boolean(token && chats.length);
+  // Сообщения покупателям (статус заказа) нужны только токен бота; чаты сотрудников для них не обязательны
+  const customerEnabled = () => Boolean(bot && bot.enabled());
   // Токен бота - секрет: в сообщения об ошибках и в журнал он не попадает
   const scrub = (s) => (token ? String(s || '').split(token).join('***') : String(s || ''));
 
@@ -56,6 +59,7 @@ function createNotifier({ db, cfg, log = console }) {
     const where = o.delivery_kind === 'pickup' ? '' : [o.delivery_city, o.delivery_point || o.delivery_address].filter(Boolean).join(', ');
     lines.push(`Доставка: ${o.delivery_title}${where ? ' · ' + where : ''}${Number(o.delivery_cost) ? ` (${rub(Number(o.delivery_cost))})` : ''}`);
     lines.push(`Оплата: ${(PAY_METHODS[o.pay_method] || {}).title || o.pay_method}`);
+    if (Number(o.discount) > 0) lines.push(`${o.discount_note}: −${rub(Number(o.discount))}`);
     lines.push('', 'Состав:');
     for (const i of items) lines.push(`• ${i.title}${i.size ? ' · ' + i.size : ''} × ${i.qty} - ${rub(Number(i.price) * i.qty)}${Number(i.product_id) >= EXT_BASE ? ' [товар партнёра]' : ''}`);
     if (o.comment) lines.push('', `Комментарий: ${o.comment}`);
@@ -70,7 +74,36 @@ function createNotifier({ db, cfg, log = console }) {
     return [`Оплачен заказ №${o.number} на ${rub(Number(o.total))}`, `Способ: ${(PAY_METHODS[o.pay_method] || {}).title || o.pay_method}`, 'Можно собирать и отправлять.', ...(siteUrl ? ['', `${siteUrl}/admin/orders/${o.id}`] : [])].join('\n');
   }
 
+  // Подсказка к статусу заказа в сообщении покупателю
+  const STATUS_NOTE = {
+    confirmed: 'Заказ подтверждён, готовим его.', paid: 'Оплата получена, спасибо!', packed: 'Заказ собран.',
+    shipped: 'Заказ отправлен.', delivered: 'Заказ получен. Спасибо за покупку!', cancelled: 'Заказ отменён.', returned: 'Возврат оформлен.',
+  };
+
+  async function deliverCustomer(row) {
+    const { rows } = await db.query(
+      `SELECT o.number, o.token, o.track_number, c.id AS customer_id, c.telegram_id, c.tg_notify
+         FROM webshop.orders o JOIN webshop.customers c ON c.id = o.customer_id WHERE o.id = $1`, [row.order_id]);
+    const o = rows[0];
+    const done = (error) => db.query('UPDATE webshop.outbox SET sent_at = NOW(), error = $2 WHERE id = $1', [row.id, error]);
+    if (!o || !o.telegram_id || !o.tg_notify) return done('нет получателя');
+    const st = STATUSES[row.payload] || { title: row.payload };
+    const lines = [`Заказ №${o.number}: ${st.title}`, STATUS_NOTE[row.payload] || ''];
+    if (row.payload === 'shipped' && o.track_number) lines.push(`Трек-номер: ${o.track_number}`);
+    if (siteUrl) lines.push('', `${siteUrl}/order/${o.number}?t=${o.token}`);
+    const r = await bot.sendToCustomer(o.telegram_id, lines.filter((x, i) => x || i > 1).join('\n'));
+    if (r.ok) return done('');
+    if (r.blocked) {                                   // покупатель заблокировал бота: больше не пишем
+      await db.query('UPDATE webshop.customers SET tg_notify = FALSE WHERE id = $1', [o.customer_id]);
+      return done('покупатель заблокировал бота (blocked)');
+    }
+    const wait = BACKOFF_SEC[Math.min(row.attempts - 1, BACKOFF_SEC.length - 1)];
+    await db.query('UPDATE webshop.outbox SET next_at = NOW() + make_interval(secs => $2), error = $3 WHERE id = $1', [row.id, wait, 'Telegram не принял сообщение']);
+    log.warn(`[notify] заказ ${row.order_id}: сообщение покупателю не доставлено (попытка ${row.attempts})`);
+  }
+
   async function deliver(row) {
+    if (row.kind === 'cust_status') return deliverCustomer(row);
     const text = row.kind === 'order_paid' ? await paidText(row.order_id) : await orderText(row.order_id);
     if (text === null) { // заказа уже нет - слать нечего
       await db.query("UPDATE webshop.outbox SET sent_at = NOW(), error = 'заказ не найден' WHERE id = $1", [row.id]);
@@ -91,7 +124,7 @@ function createNotifier({ db, cfg, log = console }) {
 
   // Берёт готовые к отправке строки (с «арендой», чтобы два процесса не слали одно и то же) и отправляет
   async function run() {
-    if (state.running || !enabled()) return;
+    if (state.running || !(enabled() || customerEnabled())) return;
     state.running = true;
     try {
       for (let guard = 0; guard < 20; guard++) {
@@ -99,7 +132,7 @@ function createNotifier({ db, cfg, log = console }) {
           `UPDATE webshop.outbox SET attempts = attempts + 1, next_at = NOW() + make_interval(secs => $1)
             WHERE id IN (SELECT id FROM webshop.outbox WHERE sent_at IS NULL AND attempts < $2 AND next_at <= NOW()
                           ORDER BY id LIMIT 5 FOR UPDATE SKIP LOCKED)
-            RETURNING id, kind, order_id, attempts`, [LEASE_SEC, MAX_ATTEMPTS]);
+            RETURNING id, kind, order_id, payload, attempts`, [LEASE_SEC, MAX_ATTEMPTS]);
         if (!rows.length) break;
         for (const row of rows) {
           try { await deliver(row); } catch (e) { log.error('[notify]', scrub(e.message)); }
@@ -120,11 +153,19 @@ function createNotifier({ db, cfg, log = console }) {
     async enqueue(client, orderId, kind = 'order_new') {
       if (enabled()) await client.query('INSERT INTO webshop.outbox (kind, order_id) VALUES ($1, $2)', [kind, orderId]);
     },
+    // Смена статуса заказа (в транзакции смены): сообщение покупателю, если у него привязан Telegram и уведомления включены
+    async enqueueCustomerStatus(client, orderId, status) {
+      if (!customerEnabled() || !status || status === 'new') return;
+      const { rows } = await client.query(
+        `SELECT 1 FROM webshop.orders o JOIN webshop.customers c ON c.id = o.customer_id
+          WHERE o.id = $1 AND c.telegram_id IS NOT NULL AND c.tg_notify`, [orderId]);
+      if (rows[0]) await client.query("INSERT INTO webshop.outbox (kind, order_id, payload) VALUES ('cust_status', $1, $2)", [orderId, status]);
+    },
     // После фиксации заказа: отправить сразу, не заставляя покупателя ждать
-    kick() { if (enabled()) setImmediate(() => { run(); }); },
+    kick() { if (enabled() || customerEnabled()) setImmediate(() => { run(); }); },
     run,
     start({ intervalMs = 30_000 } = {}) {
-      if (!enabled() || state.timer) return;
+      if (!(enabled() || customerEnabled()) || state.timer) return;
       state.timer = setInterval(() => { run(); }, intervalMs);
       state.timer.unref();
       db.query("DELETE FROM webshop.outbox WHERE sent_at < NOW() - INTERVAL '60 days'").catch(() => {});

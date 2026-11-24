@@ -4,12 +4,13 @@ const { icon } = require('../icons');
 const { rub, plural, num } = require('../util');
 const { DEPARTMENTS } = require('../model');
 const { SEASONS, heroFor, seasonPicks } = require('../seasons');
-const { card, pagination, photoUrl, countLabel, priceBlock, favBtn, favSlugs, SEASON_ICON } = require('../shopviews');
+const { card, pagination, photoUrl, countLabel, priceBlock, favBtn, favSlugs, telegramUrl, mapBlock, SEASON_ICON } = require('../shopviews');
+const { socialList, renderText } = require('../site');
 const { quote, PAY_METHODS } = require('../delivery');
 
 const SIZES_QUICK = ['36', '37', '38', '39', '40', '41', '42', '43', '44', '45', '46'];
 
-module.exports = function mount(app, { catalog, tracker, cfg, media, partner }, shopCtx, send) {
+module.exports = function mount(app, { catalog, tracker, cfg, media, partner, pages }, shopCtx, send) {
   // ---------- Главная ----------
   app.get('/', shopCtx, async (req, res, next) => {
     try {
@@ -520,6 +521,49 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner }, 
     send(req, res, { title: 'Бренды', body, bodyClass: 'page-plain', canonical: '/brands', description: `Бренды в ${req.ctx.settings.shopName}: ${all.slice(0, 12).map(([b]) => b).join(', ')}.` });
   });
 
+  // ---------- Контакты: телефон, почта, Telegram, соцсети, адрес и карта ----------
+  app.get('/contacts', shopCtx, (req, res) => {
+    tracker.record(req, res, 'page', { path: '/contacts' });
+    const s = req.ctx.settings;
+    const tel = String(s.phone || '').replace(/[^+\d]/g, '');
+    const tg = telegramUrl(s.telegram);
+    const socials = socialList(s);
+    const body = html`
+    <section class="wrap prose contacts">
+      <nav class="crumbs"><a href="/">Главная</a>${icon('chevron-right')}<span>Контакты</span></nav>
+      <h1>Контакты</h1>
+      <div class="cards3">
+        ${s.phone ? html`<a class="infocard" href="tel:${tel}"><div class="infocard__ic">${icon('phone')}</div><h3>Телефон</h3><p>${s.phone}</p></a>` : ''}
+        ${tg ? html`<a class="infocard" href="${tg}" rel="noopener" target="_blank"><div class="infocard__ic">${icon('send')}</div><h3>Telegram</h3><p>Ответим в чате</p></a>` : ''}
+        ${s.email ? html`<a class="infocard" href="mailto:${s.email}"><div class="infocard__ic">${icon('mail')}</div><h3>Почта</h3><p>${s.email}</p></a>` : ''}
+        ${s.address ? html`<div class="infocard"><div class="infocard__ic">${icon('pin')}</div><h3>Адрес магазина</h3><p>${s.address}</p>${s.hours ? html`<p class="muted">${s.hours}</p>` : ''}</div>` : ''}
+      </div>
+      ${socials.length ? html`<h2>Мы в соцсетях</h2><ul class="socials">${socials.map((x) => html`<li><a href="${x.url}" rel="noopener" target="_blank">${icon(x.icon)}${x.title}</a></li>`)}</ul>` : ''}
+    </section>
+    ${mapBlock(req.ctx, { force: true })}`;
+    send(req, res, { title: 'Контакты', body, bodyClass: 'page-plain page-contacts', canonical: '/contacts', description: `Контакты ${s.shopName}: ${[s.phone, s.address, s.hours].filter(Boolean).join(', ')}.` });
+  });
+
+  // ---------- Текстовые страницы из админки («О нас», соглашение, политика...) ----------
+  app.get('/info/:slug', shopCtx, async (req, res, next) => {
+    try {
+      const p = await pages.bySlug(String(req.params.slug).toLowerCase());
+      // черновик видно только в админке (кнопка «Посмотреть»)
+      const peek = app.locals.adminPeek && app.locals.adminPeek(req);
+      if (!p || (!(p.published && p.body.trim()) && !peek)) return next();
+      tracker.record(req, res, 'page', { path: `/info/${p.slug}` });
+      const body = html`
+      <section class="wrap prose infopage">
+        <nav class="crumbs"><a href="/">Главная</a>${icon('chevron-right')}<span>${p.title}</span></nav>
+        ${p.published ? '' : html`<p class="chip">Черновик: покупатели эту страницу не видят</p>`}
+        <h1>${p.title}</h1>
+        <div class="infopage__text">${renderText(p.body)}</div>
+        <p class="muted infopage__date">Обновлено ${new Date(p.updated_at).toLocaleDateString('ru-RU', { timeZone: cfg.tz })}</p>
+      </section>`;
+      send(req, res, { title: p.title, body, bodyClass: 'page-plain', canonical: `/info/${p.slug}`, noindex: !p.published });
+    } catch (e) { next(e); }
+  });
+
   // ---------- Доставка и оплата ----------
   app.get('/delivery', shopCtx, (req, res) => {
     const d = req.ctx.deliveryData;
@@ -582,7 +626,7 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner }, 
     try {
       await catalog.ensure();
       const base = cfg.publicUrl || `${req.protocol}://${req.get('host')}`;
-      const urls = ['/', '/catalog', '/brands', '/delivery', ...catalog.models.filter((m) => m.inStock).slice(0, 40000).map((m) => `/p/${m.slug}`)];
+      const urls = ['/', '/catalog', '/brands', '/contacts', '/delivery', ...(await pages.all()).filter((p) => p.published && p.body.trim()).map((p) => `/info/${p.slug}`), ...catalog.models.filter((m) => m.inStock).slice(0, 40000).map((m) => `/p/${m.slug}`)];
       res.type('application/xml').send('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' +
         urls.map((u) => `<url><loc>${base}${encodeURI(u)}</loc></url>`).join('') + '</urlset>');
     } catch (e) { next(e); }

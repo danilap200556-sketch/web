@@ -37,7 +37,7 @@ test.describe('оформление v2: главная, корзина-пане�
     assert.match(t, /data-rail/);
     assert.match(t, /data-rail-prev/);
     assert.match(t, /data-rail-next/);
-    assert.match(t, /class="legal"/);
+    assert.match(t, /class="foot__legal"/);
     for (const f of ['css/design.css', 'css/v4.css', 'js/fx.js', 'js/hero.js', 'js/v4.js', 'js/boot.js', 'img/grain.png', 'img/arrow.svg']) assert.equal((await client(shop.base).get('/static/' + f)).status, 200, f);
   });
 

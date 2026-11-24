@@ -17,7 +17,13 @@ function defaults(cfg) {
     logo: null,                   // свой логотип: { id, mono, w, h } (webshop.site_logo), иначе логотип по умолчанию из public/img
     logoText: false,              // писать название магазина рядом с логотипом
     // Юридические данные продавца для плашки в подвале (как требует закон о защите прав потребителей). Имя и ИНН - из реквизитов оплаты.
-    legal: { ogrnip: '', address: '', about: '' },              // фон первого экрана: { id, kind: 'video' | 'image', mime, size } (webshop.hero_media), иначе живой фон
+    legal: { ogrnip: '', address: '', about: '', since: '' },
+    // Подвал: соцсети (полные ссылки), значки оплаты и доставки, Яндекс Карта над подвалом
+    socials: { vk: '', telegram: '', youtube: '', rutube: '', dzen: '', whatsapp: '' },
+    badges: ['mir', 'visa', 'mastercard', 'sbp', 'pochta', 'cdek', 'boxberry'],
+    // map.query: адрес, координаты «широта, долгота», ссылка Яндекс Карт или код конструктора; пусто - адрес магазина.
+    // show: all - над подвалом на всех страницах (кроме корзины, оформления и кабинета), home - на главной и в «Контактах», off - нигде
+    map: { query: '', zoom: 16, show: 'all', title: 'Как нас найти', note: '' },              // фон первого экрана: { id, kind: 'video' | 'image', mime, size } (webshop.hero_media), иначе живой фон
     showNoteSizes: false,         // продавать ли размеры с пометками в артикуле (без коробки, один кроссовок, брак) как обычные
     requirePhoto: true,           // не показывать модели без фото
     electronicsTeaser: true,      // плашка «скоро электроника» на главной

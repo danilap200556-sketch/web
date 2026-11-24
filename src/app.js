@@ -25,6 +25,7 @@ const { DEPARTMENTS } = require('./model');
 const { createMedia } = require('./media');
 const { createHeroMedia } = require('./heromedia');
 const { createLogo } = require('./logo');
+const { createPages } = require('./pages');
 const { shopPage, favSlugs } = require('./shopviews');
 const { icon } = require('./icons');
 
@@ -45,6 +46,7 @@ function createApp(cfg, db, opts = {}) {
   const media = createMedia(db, { partner });
   const heroMedia = createHeroMedia({ db, settings });
   const logo = createLogo({ db, settings });
+  const pages = createPages(db);
   const writeoff = createWriteoff(db);
   // Личный кабинет: аккаунты, сессии, одноразовые коды, каналы доставки кодов (SMS, Telegram, почта), лояльность
   const accounts = createAccounts({ db });
@@ -57,13 +59,13 @@ function createApp(cfg, db, opts = {}) {
   const notifier = createNotifier({ db, cfg, bot });
   const carriers = createCarriers(cfg, { fetchImpl: opts.fetchImpl });
   const payments = createPayments({ db, cfg, settings, notifier, fetchImpl: opts.fetchImpl });
-  const services = { cfg, db, settings, catalog, delivery, carts, tracker, media, heroMedia, logo, writeoff, notifier, carriers, payments, partner, accounts, sessions, codes, sms, mail, bot, loyalty };
+  const services = { cfg, db, settings, catalog, delivery, carts, tracker, media, heroMedia, logo, pages, writeoff, notifier, carriers, payments, partner, accounts, sessions, codes, sms, mail, bot, loyalty };
   app.locals.services = services;
 
   // --- Заголовки безопасности. Скрипты и стили - только свои файлы (без inline).
   app.use((req, res, next) => {
     res.set({
-      'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; media-src 'self'; " +
+      'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; media-src 'self'; frame-src https://yandex.ru; " +
         "connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
       'X-Content-Type-Options': 'nosniff',
       'X-Frame-Options': 'DENY',
@@ -149,6 +151,8 @@ function createApp(cfg, db, opts = {}) {
         baseUrl,
         assetV: ASSET_V,
         deliveryData: d,
+        path: req.path,
+        footerPages: await pages.footer(),
         loginEnabled: sms.enabled() || bot.enabled(),
         customer: req.customer ? { id: req.customer.id, name: req.customer.name, phone: req.customer.phone, status: await loyalty.statusOf(req.customer) } : null,
       };

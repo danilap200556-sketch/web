@@ -6,6 +6,7 @@ const { rub, plural } = require('./util');
 const { DEPARTMENTS } = require('./model');
 const { SEASONS } = require('./seasons');
 const { logoUrls } = require('./logo');
+const { socialList, badgeHtml, BADGES, DEFAULT_BADGES, mapFor } = require('./site');
 
 const SEASON_ICON = { winter: 'snow', spring: 'flower', summer: 'sun', autumn: 'leaf' };
 
@@ -123,6 +124,45 @@ function logoImg(s, variant, cls = '') {
   return html`<img class="logo__img ${cls}" src="${variant === 'light' ? lu.light : lu.dark}" alt="${s.shopName}" width="${w}" height="${h}">${s.logoText ? html`<span class="logo__text">${s.shopName}</span>` : ''}`;
 }
 
+// Как подписать Telegram в контактах: @имя
+function tgName(v) {
+  const m = /([A-Za-z0-9_]{4,64})\/?$/.exec(String(v || '').trim());
+  return m ? '@' + m[1] : 'Telegram';
+}
+
+// Яндекс Карта над подвалом: где показывать - настройка map.show; в корзине, оформлении и кабинете её нет,
+// на странице «Контакты» карта стоит в самой странице
+const NO_MAP = /^\/(cart|checkout|order|account|login|favorites|contacts)(\/|$)/;
+function mapBlock(ctx, { force = false } = {}) {
+  const s = ctx.settings;
+  const m = mapFor(s);
+  if (!m) return '';
+  const show = (s.map && s.map.show) || 'all';
+  const path = ctx.path || '/';
+  if (!force && (NO_MAP.test(path) || (show === 'home' && path !== '/'))) return '';
+  const tel = String(s.phone || '').replace(/[^+\d]/g, '');
+  return html`<section class="where" aria-label="Магазин на карте">
+    <div class="wrap where__head">
+      <div class="where__info">
+        <h2>${(s.map && s.map.title) || 'Как нас найти'}</h2>
+        <ul>
+          ${s.address ? html`<li>${icon('pin')}<span>${s.address}</span></li>` : ''}
+          ${s.hours ? html`<li>${icon('clock')}<span>${s.hours}</span></li>` : ''}
+          ${s.phone ? html`<li>${icon('phone')}<a href="tel:${tel}">${s.phone}</a></li>` : ''}
+        </ul>
+        ${s.map && s.map.note ? html`<p class="where__note">${s.map.note}</p>` : ''}
+      </div>
+      <div class="where__btns">
+        ${m.route ? html`<a class="btn btn--light" href="${m.route}" rel="noopener" target="_blank">${icon('arrow-up-right')} Построить маршрут</a>` : ''}
+        <a class="btn btn--glass" href="${m.open}" rel="noopener" target="_blank">Открыть в Яндекс Картах</a>
+      </div>
+    </div>
+    <div class="where__map">
+      <iframe src="${m.src}" title="Магазин на Яндекс Картах" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+    </div>
+  </section>`;
+}
+
 // «ИНДИВИДУАЛЬНЫЙ ПРЕДПРИНИМАТЕЛЬ ИВАНОВ ИВАН ИВАНОВИЧ» -> «ИП Иванов Иван Иванович»; прочее - как есть
 function sellerName(name) {
   const n = String(name || '').trim().replace(/\s+/g, ' ');
@@ -162,6 +202,12 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
   const legal = s.legal || {};
   const seller = sellerName(req0.name);
   const ogrn = String(legal.ogrnip || '');
+  const socials = socialList(s);
+  const badges = (Array.isArray(s.badges) ? s.badges : DEFAULT_BADGES).filter((k) => BADGES.some((b) => b.key === k));
+  const fp = ctx.footerPages || { info: [], terms: false, privacy: false };
+  const yNow = new Date().getFullYear();
+  const since = parseInt(legal.since, 10);
+  const years = since >= 1990 && since < yNow ? `${since}-${yNow}` : String(yNow);
   return html`<!doctype html>
 <html lang="ru" data-season="${ctx.season}">
 <head>
@@ -280,6 +326,7 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
     </aside>
   </div>
   <main id="main">${body}</main>
+  ${mapBlock(ctx)}
   <section class="subscribe">
     <div class="wrap subscribe__in">
       <div><b>Новинки и скидки первыми</b><span>${tg ? 'Подпишитесь на наш Telegram: поступления, размеры и закрытые распродажи.' : 'Новые поступления каждую неделю: размеры и цены обновляются сами.'}</span></div>
@@ -290,57 +337,65 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
     <div class="wrap foot__grid">
       <div class="foot__brand">
         <a class="logo logo--foot" href="/" aria-label="${s.shopName}: на главную">${logoImg(s, 'light')}</a>
-        <p class="foot__lead">Оригинальные кроссовки, кеды, ботинки и одежда. Доставляем по всей России, примерка при самовывозе.</p>
-        <ul class="foot__pay" aria-label="Способы оплаты"><li>СБП</li><li>МИР</li><li>Visa</li><li>Mastercard</li><li>Перевод</li></ul>
+        <p class="foot__lead">${legal.about || `${s.shopName} - магазин оригинальной обуви, одежды и аксессуаров.`}</p>
+        <dl class="foot__legal">
+          ${seller ? html`<div><dt>Продавец</dt><dd>${seller}</dd></div>` : ''}
+          ${req0.inn ? html`<div><dt>ИНН</dt><dd>${req0.inn}</dd></div>` : ''}
+          ${ogrn ? html`<div><dt>${ogrn.length === 13 ? 'ОГРН' : 'ОГРНИП'}</dt><dd>${ogrn}</dd></div>` : ''}
+          ${legal.address ? html`<div><dt>Юр. адрес</dt><dd>${legal.address}</dd></div>` : ''}
+        </dl>
+      </div>
+      ${socials.length ? html`<div>
+        <h4>Социальные сети</h4>
+        <ul class="foot__icons">${socials.map((x) => html`<li><a href="${x.url}" rel="noopener" target="_blank">${icon(x.icon)}${x.title}</a></li>`)}</ul>
+      </div>` : ''}
+      <div>
+        <h4>Способы связи</h4>
+        <ul class="foot__icons">
+          ${tg ? html`<li><a href="${tg}" rel="noopener" target="_blank">${icon('send')}${tgName(s.telegram)}</a></li>` : ''}
+          ${s.phone ? html`<li><a href="tel:${tel}">${icon('phone')}${s.phone}</a></li>` : ''}
+          ${s.email ? html`<li><a href="mailto:${s.email}">${icon('mail')}${s.email}</a></li>` : ''}
+        </ul>
+      </div>
+      <div>
+        ${s.address ? html`<h4>Адрес магазина</h4><p class="foot__text">${s.address}</p>` : ''}
+        ${s.hours ? html`<h4>Режим работы</h4><p class="foot__text">${s.hours}</p>` : ''}
       </div>
       <div>
         <h4>Каталог</h4>
         <ul>
+          <li><a href="/brands">Бренды</a></li>
+          <li><a href="/catalog">Все товары</a></li>
           ${Object.values(DEPARTMENTS).filter((d) => ctx.deptCounts[d.slug] > 0).map((d) => html`<li><a href="/catalog?dept=${d.slug}">${d.title}</a></li>`)}
           <li><a href="/catalog?sort=new">Новинки</a></li>
           ${ctx.saleCount ? html`<li><a href="/catalog?sale=1&amp;sort=discount">Скидки</a></li>` : ''}
-          <li><a href="/brands">Бренды</a></li>
         </ul>
       </div>
       <div>
-        <h4>Покупателям</h4>
+        <h4>Информация</h4>
         <ul>
+          ${fp.info.filter((p) => p.slug === 'about').map((p) => html`<li><a href="/info/${p.slug}">${p.title}</a></li>`)}
+          <li><a href="/contacts">Контакты</a></li>
           <li><a href="/delivery">Доставка и оплата</a></li>
           <li><a href="/delivery#return">Обмен и возврат</a></li>
+          ${fp.info.filter((p) => p.slug !== 'about').map((p) => html`<li><a href="/info/${p.slug}">${p.title}</a></li>`)}
           <li><a href="/favorites">Избранное</a></li>
-          <li><a href="/cart">Корзина</a></li>
-        </ul>
-      </div>
-      <div>
-        <h4>Контакты</h4>
-        <ul class="foot__contacts">
-          <li>${icon('phone')}<a href="tel:${tel}">${s.phone}</a></li>
-          <li>${icon('mail')}<a href="mailto:${s.email}">${s.email}</a></li>
-          ${tg ? html`<li>${icon('send')}<a href="${tg}" rel="noopener" target="_blank">Telegram</a></li>` : ''}
-          <li>${icon('pin')}<span>${s.address}</span></li>
-          <li>${icon('clock')}<span>${s.hours}</span></li>
         </ul>
       </div>
     </div>
-    <div class="wrap">
-      <section class="legal" aria-label="Сведения о продавце">
-        <p class="legal__about">${legal.about || `${s.shopName} - магазин оригинальной обуви, одежды и аксессуаров.`}</p>
-        <dl class="legal__list">
-          ${seller ? html`<div><dt>Продавец</dt><dd>${seller}</dd></div>` : ''}
-          ${req0.inn ? html`<div><dt>ИНН</dt><dd>${req0.inn}</dd></div>` : ''}
-          ${ogrn ? html`<div><dt>${ogrn.length === 13 ? 'ОГРН' : 'ОГРНИП'}</dt><dd>${ogrn}</dd></div>` : ''}
-          ${legal.address || s.address ? html`<div><dt>${legal.address ? 'Юридический адрес' : 'Адрес'}</dt><dd>${legal.address || s.address}</dd></div>` : ''}
-        </dl>
-      </section>
-    </div>
-    <div class="wrap foot__bottom">
-      <span>Интернет-магазин © ${s.shopName} ${new Date().getFullYear()}</span>
-      <span class="foot__links"><a href="/delivery">Доставка и оплата</a><a href="/delivery#return">Обмен и возврат</a></span>
-      <span>Цены и наличие обновляются автоматически</span>
+    <div class="foot__bottom">
+      <div class="wrap">
+        ${badges.length ? html`<ul class="foot__badges" aria-label="Оплата и доставка">${badges.map((k) => badgeHtml(k))}</ul>` : ''}
+        <p class="foot__copy">
+          <span>Интернет-магазин © ${s.shopName} ${years}</span>
+          ${fp.terms ? html`<a href="/info/terms">Пользовательское соглашение</a>` : ''}
+          ${fp.privacy ? html`<a href="/info/privacy">Политика конфиденциальности</a>` : ''}
+        </p>
+      </div>
     </div>
   </footer>
   <div class="cookie" id="cookie" hidden>
-    <p>Мы используем cookie: чтобы работала корзина и считалась статистика посещений.</p>
+    <p>Мы используем cookie: чтобы работала корзина и считалась статистика посещений.${mapFor(s) ? ' Карта на сайте - сервис Яндекса, у него свои cookie.' : ''}${ctx.footerPages && ctx.footerPages.privacy ? html` <a href="/info/privacy">Подробнее</a>` : ''}</p>
     <button class="btn btn--sm" type="button" data-cookie-ok>Понятно</button>
   </div>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
@@ -354,4 +409,4 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
 
 const countLabel = (n) => `${n} ${plural(n, 'модель', 'модели', 'моделей')}`;
 
-module.exports = { shopPage, card, favBtn, favSlugs, telegramUrl, sellerName, pagination, photoUrl, sizeRange, badgeOf, priceBlock, countLabel, SEASON_ICON, esc };
+module.exports = { shopPage, card, favBtn, favSlugs, telegramUrl, sellerName, mapBlock, pagination, photoUrl, sizeRange, badgeOf, priceBlock, countLabel, SEASON_ICON, esc };

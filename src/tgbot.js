@@ -57,15 +57,16 @@ function createBot({ db, cfg, accounts, codes, fetchImpl = fetch, log = console 
     return u;
   }
 
+  const linkUrl = async (tok, purpose) => `https://t.me/${await username()}?start=${purpose === 'link' ? 'K' : 'L'}${tok}`;
+
   // purpose: 'login' - вход (customerId не нужен), 'link' - привязка Telegram к аккаунту customerId
   async function createLink({ purpose, customerId = null }) {
-    const name = await username();
     const tok = crypto.randomBytes(18).toString('base64url');
     await db.query(
       'INSERT INTO webshop.tg_login (token, purpose, customer_id, expires_at) VALUES ($1, $2, $3, NOW() + make_interval(mins => $4))',
       [tok, purpose, customerId, LINK_TTL_MIN]);
     db.query("DELETE FROM webshop.tg_login WHERE created_at < NOW() - INTERVAL '2 days'").catch(() => {});
-    return { token: tok, url: `https://t.me/${name}?start=${purpose === 'link' ? 'K' : 'L'}${tok}` };
+    return { token: tok, url: await linkUrl(tok, purpose) };
   }
 
   async function sendCode(tok, chatId) {
@@ -189,7 +190,7 @@ function createBot({ db, cfg, accounts, codes, fetchImpl = fetch, log = console 
     state.loop = null;
   }
 
-  return { enabled, username, createLink, handleUpdate, pollOnce, start, stop, sendToCustomer };
+  return { enabled, username, linkUrl, createLink, handleUpdate, pollOnce, start, stop, sendToCustomer };
 }
 
 module.exports = { createBot };

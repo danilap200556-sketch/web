@@ -4,14 +4,17 @@
 const { normalizePhone } = require('../util');
 const { CodeError } = require('../auth-codes');
 const { SmsError } = require('../sms');
+const { AccountError } = require('../accounts');
+const sec = require('../security');
 const views = require('../accountviews');
 
 module.exports = function mount(app, services, shopCtx, send) {
-  const { cfg, settings, accounts, sessions, codes, sms, bot } = services;
+  const { cfg, db, accounts, sessions, codes, sms, bot } = services;
   const { cookieOpts } = app.locals.cookies;
 
   const loginOn = () => sms.enabled() || bot.enabled();
-  const tabs = () => [sms.enabled() && 'sms'].filter(Boolean);
+  const tabs = () => [bot.enabled() && 'tg', sms.enabled() && 'sms'].filter(Boolean);
+  const tgLimiter = new sec.RateLimiter(20, 10 * 60_000);   // ссылки входа на один адрес: не засорять таблицу
   const notFound = (res) => res.status(404).type('text').send('Не найдено');
 
   // Куда вернуть после входа: только путь на этом же сайте
@@ -23,15 +26,20 @@ module.exports = function mount(app, services, shopCtx, send) {
     send(req, res, { title, noindex: true, bodyClass: 'page-plain', body }, status);
   };
 
-  function loginPage(req, res, status, { tab = 'sms', step = 'phone', phone = '', next = '', error = '' } = {}) {
+  // tg: { step, token, url } для вкладки Telegram
+  function loginPage(req, res, status, { tab = '', step = 'phone', phone = '', next = '', error = '', tg = { step: 'start' } } = {}) {
     const t = tabs();
     const cur = t.includes(tab) ? tab : t[0];
-    page(req, res, status, 'Вход', views.loginView({ tabs: t, tab: cur, next, error, panes: { sms: views.smsPane({ step, phone, next }) } }));
+    page(req, res, status, 'Вход', views.loginView({ tabs: t, tab: cur, next, error, panes: {
+      sms: views.smsPane({ step, phone, next }),
+      tg: views.tgPane({ ...tg, next }),
+    } }));
   }
 
   // Подтверждённый телефон -> клиент и «свежая» сессия (пароль можно сменить без старого)
-  async function startSession(req, res, phone) {
+  async function startSession(req, res, phone, { telegramId = null } = {}) {
     const { customer, created } = await accounts.ensureByVerifiedPhone(phone, {});
+    if (telegramId) await accounts.bindTelegram(customer.id, telegramId);
     const token = await sessions.create(customer.id, { ip: req.ip || '', ua: req.get('user-agent') || '', fresh: true });
     res.cookie(sessions.cookieName, token, cookieOpts(cfg.customer.sessionDays * 86400_000));
     await accounts.touchLogin(customer.id);
@@ -81,6 +89,46 @@ module.exports = function mount(app, services, shopCtx, send) {
       const ok = phone && await codes.verify({ purpose: 'login-sms', target: phone, code: String(req.body.code || '').replace(/\s+/g, '') });
       if (!ok) return loginPage(req, res, 422, { tab: 'sms', step: 'code', phone, next: nx, error: 'Неверный или просроченный код. Проверьте цифры или запросите новый.' });
       await startSession(req, res, phone);
+      res.redirect(nx || '/account');
+    } catch (e) { next(e); }
+  });
+
+  // ---------- Telegram ----------
+  app.post('/login/telegram/start', shopCtx, async (req, res, next) => {
+    try {
+      if (!bot.enabled()) return notFound(res);
+      const nx = safeNext(req.body.next);
+      if (req.body.consent !== 'on' && req.body.consent !== '1') return loginPage(req, res, 422, { tab: 'tg', next: nx, error: 'Нужно согласие на обработку персональных данных' });
+      const key = req.ip || 'x';
+      if (tgLimiter.blocked(key)) return loginPage(req, res, 429, { tab: 'tg', next: nx, error: 'Слишком часто. Подождите несколько минут.' });
+      tgLimiter.fail(key);
+      let link;
+      try { link = await bot.createLink({ purpose: 'login' }); } catch (e) {
+        console.warn('[tgbot]', e.message);
+        return loginPage(req, res, 502, { tab: 'tg', next: nx, error: 'Не удалось связаться с Telegram. Попробуйте позже или войдите другим способом.' });
+      }
+      loginPage(req, res, 200, { tab: 'tg', next: nx, tg: { step: 'wait', token: link.token, url: link.url } });
+    } catch (e) { next(e); }
+  });
+
+  app.post('/login/telegram/verify', shopCtx, async (req, res, next) => {
+    try {
+      if (!bot.enabled()) return notFound(res);
+      const nx = safeNext(req.body.next);
+      const tok = String(req.body.token || '').slice(0, 80);
+      const wait = async (status, error) => loginPage(req, res, status, { tab: 'tg', next: nx, error, tg: { step: 'wait', token: tok, url: await bot.linkUrl(tok, 'login').catch(() => '#') } });
+      const ok = tok && await codes.verify({ purpose: 'tg', target: tok, code: String(req.body.code || '').replace(/\s+/g, '') });
+      if (!ok) return wait(422, 'Неверный или просроченный код. Проверьте цифры или откройте бота заново.');
+      const { rows } = await db.query(
+        `UPDATE webshop.tg_login SET consumed_at = NOW()
+          WHERE token = $1 AND purpose = 'login' AND phone IS NOT NULL AND telegram_id IS NOT NULL AND consumed_at IS NULL AND expires_at > NOW() RETURNING phone, telegram_id`, [tok]);
+      if (!rows[0]) return wait(422, 'Ссылка устарела. Нажмите «Войти через Telegram» заново.');
+      try {
+        await startSession(req, res, rows[0].phone, { telegramId: rows[0].telegram_id });
+      } catch (e) {
+        if (!(e instanceof AccountError)) throw e;
+        return loginPage(req, res, 422, { tab: 'tg', next: nx, error: e.message });
+      }
       res.redirect(nx || '/account');
     } catch (e) { next(e); }
   });

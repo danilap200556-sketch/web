@@ -29,6 +29,29 @@ function smsPane({ step, phone, next }) {
   </form>`;
 }
 
+// Вход через Telegram. step 'start' - кнопка, 'wait' - ссылка на бота и поле для кода (token нужен сайту, чтобы связать код с ссылкой)
+function tgPane({ step, url = '', token = '', next }) {
+  if (step === 'wait') {
+    return html`<form class="authform" method="post" action="/login/telegram/verify" data-tg-token="${token}">
+      <input type="hidden" name="token" value="${token}"><input type="hidden" name="next" value="${next}">
+      <ol class="authsteps">
+        <li>Откройте бота в Telegram по кнопке ниже</li>
+        <li>Нажмите «Запустить» и «Поделиться номером»</li>
+        <li>Бот пришлёт код: введите его здесь</li>
+      </ol>
+      <a class="btn btn--lg btn--block" href="${url}" target="_blank" rel="noopener noreferrer">Открыть бота в Telegram ${icon('arrow-up-right')}</a>
+      <label class="field">Код из Telegram<input class="codeinput" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label>
+      <button class="btn btn--lg btn--block btn--ghost" type="submit">Войти ${icon('arrow-right')}</button>
+    </form>`;
+  }
+  return html`<form class="authform" method="post" action="/login/telegram/start">
+    <input type="hidden" name="next" value="${next}">
+    ${consentCheck()}
+    <button class="btn btn--lg btn--block" type="submit">Войти через Telegram ${icon('arrow-right')}</button>
+    <p class="authnote muted">Без паролей и SMS: бот подтвердит ваш номер и пришлёт код. Нет аккаунта: он создастся при первом входе.</p>
+  </form>`;
+}
+
 // panes - готовые блоки вкладок { sms, tg, pw }; tabs - ключи доступных вкладок
 function loginView({ tabs, tab, next = '', error = '', panes }) {
   const q = (k) => `/login?tab=${k}${next ? `&next=${encodeURIComponent(next)}` : ''}`;
@@ -70,4 +93,4 @@ function privacyPage({ shopName, email, operator }) {
   </section>`;
 }
 
-module.exports = { loginView, smsPane, accountHome, privacyPage, maskPhone, consentCheck, TAB_TITLES };
+module.exports = { loginView, smsPane, tgPane, accountHome, privacyPage, maskPhone, consentCheck, TAB_TITLES };

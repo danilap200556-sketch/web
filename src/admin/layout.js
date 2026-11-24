@@ -12,6 +12,7 @@ const NAV = [
   { key: 'loyalty', href: '/admin/loyalty', icon: 'tag', title: 'Лояльность' },
   { key: 'traffic', href: '/admin/traffic', icon: 'chart', title: 'Посещаемость' },
   { key: 'showcase', href: '/admin/showcase', icon: 'palette', title: 'Витрина и каталог' },
+  { key: 'pages', href: '/admin/pages', icon: 'copy', title: 'Страницы' },
   { key: 'electronics', href: '/admin/electronics', icon: 'chip', title: 'Электроника' },
   { key: 'delivery', href: '/admin/delivery', icon: 'truck', title: 'Доставка и оплата' },
   { key: 'users', href: '/admin/users', icon: 'user', title: 'Сотрудники' },

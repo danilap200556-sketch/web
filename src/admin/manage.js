@@ -6,6 +6,7 @@ const { SmsError } = require('../sms');
 const sec = require('../security');
 const { ROLES } = require('./auth');
 const { telegramUrl } = require('../shopviews');
+const { SOCIALS, socialUrl, BADGES, DEFAULT_BADGES, mapFor } = require('../site');
 
 const KIND = { pickup: 'Самовывоз', courier: 'Курьер', tc: 'Транспортная компания' };
 const money = (v) => { const n = parseFloat(String(v ?? '').replace(',', '.').replace(/\s/g, '')); return Number.isFinite(n) && n >= 0 ? Math.min(n, 1e7) : 0; };
@@ -311,6 +312,71 @@ module.exports = function mount({ db, auth, render, fmt, router, settings, deliv
     } catch (e) { next(e); }
   });
 
+  // ---------- Подвал сайта и карта ----------
+  function footerCard(req, s) {
+    const so = s.socials || {};
+    const mp = s.map || {};
+    const on = new Set(Array.isArray(s.badges) ? s.badges : DEFAULT_BADGES);
+    const m = mapFor(s);
+    return html`<section class="card card--pad">
+      <header class="card__h"><div><h2>Подвал сайта и карта</h2>
+        <p class="muted">Телефон, почта, Telegram для связи, адрес и часы работы берутся из блока «Магазин и контакты» выше, ИНН и продавец - из реквизитов в «Оплате».
+        Здесь - соцсети, значки оплаты и доставки и Яндекс Карта над подвалом.</p></div></header>
+      <form method="post" action="/admin/settings/footer" class="mform__grid">${req.adminCsrf}
+        <h3 class="mform__sub">Социальные сети</h3>
+        <p class="muted field--wide">Полная ссылка на страницу, например https://vk.com/shop. Пустое поле - сети нет в подвале.</p>
+        ${SOCIALS.map((x) => html`<label class="field">${x.title}<input name="soc_${x.key}" value="${so[x.key] || ''}" maxlength="200" placeholder="${x.key === 'telegram' ? 'https://t.me/канал' : 'https://' + x.hosts[0] + '/...'}"></label>`)}
+        <label class="field">Год открытия магазина<input name="since" value="${(s.legal || {}).since || ''}" inputmode="numeric" maxlength="4" placeholder="2021"></label>
+
+        <h3 class="mform__sub">Значки оплаты и доставки</h3>
+        <div class="field--wide badgepick">${BADGES.map((b) => html`<label class="check"><input type="checkbox" name="badges" value="${b.key}" ${on.has(b.key) ? 'checked' : ''}><span>${b.title}</span></label>`)}</div>
+
+        <h3 class="mform__sub">Яндекс Карта</h3>
+        <p class="muted field--wide">Впишите адрес, координаты («55.743800, 37.500500» - скопируйте точку на Яндекс Картах), ссылку с Яндекс Карт
+          или ссылку/код из <a href="https://yandex.ru/map-constructor/" target="_blank" rel="noopener">конструктора карт</a>. Пусто - на карте адрес магазина.
+          ${m ? html`Сейчас: <a href="${m.open}" target="_blank" rel="noopener">открыть точку на Яндекс Картах</a>.` : html`<b>Сейчас карты нет</b>: не указан адрес или показ выключен.`}</p>
+        <label class="field field--wide">Где магазин на карте<input name="map_query" value="${mp.query || ''}" maxlength="600" placeholder="${s.address || 'Москва, ул. Примерная, 1'}"></label>
+        <label class="field">Заголовок блока<input name="map_title" value="${mp.title || 'Как нас найти'}" maxlength="60"></label>
+        <label class="field">Масштаб (3-19)<input name="map_zoom" type="number" min="3" max="19" value="${mp.zoom || 16}"></label>
+        <label class="field field--wide">Как добраться (подсказка под адресом)<input name="map_note" value="${mp.note || ''}" maxlength="200" placeholder="5 минут пешком от метро, вход со двора"></label>
+        <fieldset class="field--wide radios"><legend>Где показывать карту</legend>
+          ${[['all', 'Над подвалом на всех страницах (кроме корзины, оформления и кабинета)'], ['home', 'Только на главной и в «Контактах»'], ['off', 'Нигде']].map(([v, t]) => html`<label class="check"><input type="radio" name="map_show" value="${v}" ${(mp.show || 'all') === v ? 'checked' : ''}><span>${t}</span></label>`)}
+        </fieldset>
+        <div class="mform__foot"><button class="btn btn--primary" type="submit">Сохранить подвал и карту</button></div>
+      </form>
+    </section>`;
+  }
+  router.post('/settings/footer', auth.require('settings'), async (req, res, next) => {
+    try {
+      const b = req.body;
+      const s = await settings.get();
+      const socials = {};
+      const bad = [];
+      for (const x of SOCIALS) {
+        const v = str(b['soc_' + x.key], 200);
+        socials[x.key] = v ? socialUrl(x.key, v) : '';
+        if (v && !socials[x.key]) bad.push(x.title);
+      }
+      if (bad.length) { res.flash('err', `Не похоже на ссылку: ${bad.join(', ')}. Нужна ссылка вида https://${SOCIALS.find((x) => x.title === bad[0]).hosts[0]}/...`); return res.redirect('/admin/settings'); }
+      const since = str(b.since, 4);
+      const yNow = new Date().getFullYear();
+      if (since && !(/^\d{4}$/.test(since) && Number(since) >= 1990 && Number(since) <= yNow)) { res.flash('err', `Год открытия: четыре цифры, от 1990 до ${yNow}`); return res.redirect('/admin/settings'); }
+      const pick = [].concat(b.badges || []).flatMap((v) => String(v).split(','));
+      const badges = BADGES.map((x) => x.key).filter((k) => pick.includes(k));
+      const map = {
+        query: str(b.map_query, 600),
+        title: str(b.map_title, 60) || 'Как нас найти',
+        zoom: Math.min(19, Math.max(3, parseInt(b.map_zoom, 10) || 16)),
+        note: str(b.map_note, 200),
+        show: ['all', 'home', 'off'].includes(b.map_show) ? b.map_show : 'all',
+      };
+      if (map.query && /^https?:/i.test(map.query) && !mapFor({ map })) { res.flash('err', 'Карта: ссылка не с Яндекс Карт или в ней нет точки. Впишите адрес или координаты'); return res.redirect('/admin/settings'); }
+      await settings.set({ socials, badges, map, legal: { ...(s.legal || {}), since } });
+      res.flash('ok', 'Подвал и карта сохранены');
+      res.redirect('/admin/settings');
+    } catch (e) { next(e); }
+  });
+
   // ---------- Настройки магазина ----------
   router.get('/settings', auth.require('settings'), async (req, res, next) => {
     try {
@@ -334,6 +400,7 @@ module.exports = function mount({ db, auth, render, fmt, router, settings, deliv
           <div class="mform__foot"><button class="btn btn--primary" type="submit">Сохранить</button></div>
         </form>
       </section>
+      ${footerCard(req, s)}
       <section class="card card--pad"><h2>Откуда берутся товары</h2>
         <p>Модели, цены, фото и остатки сайт читает из общей базы приложения «Склад» (только чтение) и обновляет раз в полминуты. Размеры одной модели склеиваются по артикулу: <code>DD1391-100_42</code> - модель <code>DD1391-100</code>, размер 42. Заказы с сайта держат товар в резерве, пока их не отправили: после отправки списывайте его в приложении.</p>
         <p class="muted">Цены меняются в приложении. Здесь они не правятся.</p></section>
@@ -346,12 +413,13 @@ module.exports = function mount({ db, auth, render, fmt, router, settings, deliv
   router.post('/settings', auth.require('settings'), async (req, res, next) => {
     try {
       const b = req.body;
+      const s0 = await settings.get();
       const ogrnip = str(b.ogrnip, 20).replace(/\s+/g, '');
       if (ogrnip && !/^(\d{13}|\d{15})$/.test(ogrnip)) { res.flash('err', 'ОГРН - 13 цифр, ОГРНИП - 15 цифр'); return res.redirect('/admin/settings'); }
       const tg = str(b.telegram, 80);
       if (tg && !telegramUrl(tg)) { res.flash('err', 'Telegram: укажите @имя или ссылку https://t.me/имя'); return res.redirect('/admin/settings'); }
       await settings.set({ shopName: str(b.shopName, 40) || 'Магазин', phone: str(b.phone, 40), email: str(b.email, 80), hours: str(b.hours, 80), address: str(b.address, 160),
-        telegram: tg, legal: { ogrnip, address: str(b.legalAddress, 200), about: str(b.about, 200) } });
+        telegram: tg, legal: { ...(s0.legal || {}), ogrnip, address: str(b.legalAddress, 200), about: str(b.about, 200) } });
       res.flash('ok', 'Настройки сохранены');
       res.redirect('/admin/settings');
     } catch (e) { next(e); }

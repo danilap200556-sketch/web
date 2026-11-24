@@ -217,6 +217,7 @@ module.exports = function mount(app, services) {
   require('./customers')(ctx);
   require('./loyalty')(ctx);
   require('./showcase')(ctx);
+  require('./pages')(ctx);
   require('./electronics')(ctx);
   require('./manage')(ctx);
 

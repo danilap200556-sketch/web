@@ -79,7 +79,7 @@ test.describe('логотип из админки, юридические дан
 
   test('юридическая плашка: продавец из реквизитов, ИНН, ОГРНИП; неверный ОГРНИП не сохраняется', async () => {
     let t = (await client(shop.base).get('/')).text;
-    assert.match(t, /class="legal"/);
+    assert.match(t, /class="foot__legal"/);
     assert.match(t, /<dt>Продавец<\/dt><dd>ИП Усатов Егор Николаевич<\/dd>/);
     assert.match(t, /<dt>ИНН<\/dt><dd>616614137900<\/dd>/);
     assert.doesNotMatch(t, /ОГРНИП/, 'пока не указан - строки нет');
@@ -94,7 +94,7 @@ test.describe('логотип из админки, юридические дан
     assert.equal(ok.status, 302);
     t = (await client(shop.base).get('/')).text;
     assert.match(t, /<dt>ОГРНИП<\/dt><dd>322508100353184<\/dd>/);
-    assert.match(t, /<dt>Юридический адрес<\/dt><dd>г\. Москва, ул\. Юридическая, 2<\/dd>/);
+    assert.match(t, /<dt>Юр. адрес<\/dt><dd>г\. Москва, ул\. Юридическая, 2<\/dd>/);
     assert.match(t, /KS Store - оригинальные кроссовки/);
     assert.match(t, /href="https:\/\/t\.me\/ks_store"/, 'Telegram из настроек в шапке и подвале');
     const page = await owner.c.get('/admin/settings');

@@ -387,18 +387,75 @@ select, .field input, .field textarea, .price-range input { border-radius: 8px; 
 .foot .foot__pay { display: flex; flex-wrap: wrap; gap: 6px; margin: 20px 0 0; padding: 0; list-style: none; }
 .foot__pay li { padding: 5px 10px; border-radius: 6px; border: 1px solid #333; font-size: 12px; font-weight: 700; letter-spacing: .04em; color: #d4d4d4; }
 
-/* Плашка с юридическими данными продавца */
-.legal { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 18px 40px; align-items: center; margin-top: clamp(34px, 4vw, 52px);
-  padding: 20px 24px; border: 1px solid var(--night-line); border-radius: 12px; background: var(--night-2); }
-.legal__about { position: relative; margin: 0; padding-left: 26px; color: #d8d8d8; font-size: 14px; line-height: 1.5; }
-.legal__about::before { content: ''; position: absolute; left: 0; top: .2em; width: 14px; height: 14px; background: #fff; -webkit-mask: var(--spark) center / contain no-repeat; mask: var(--spark) center / contain no-repeat; }
-.legal__list { display: flex; flex-wrap: wrap; gap: 14px 34px; margin: 0; }
-.legal__list div { display: grid; gap: 3px; }
-.legal__list dt { color: #777; font-size: 11.5px; font-weight: 650; letter-spacing: .1em; text-transform: uppercase; }
-.legal__list dd { margin: 0; color: #f0f0f0; font-size: 14px; font-variant-numeric: tabular-nums; }
-.foot__bottom { align-items: center; margin-top: 22px; color: #6f6f6f; border-top-color: var(--night-line); }
-.foot__links { display: flex; flex-wrap: wrap; gap: 6px 20px; }
-.foot__links a:hover { color: #fff; }
+/* Подвал как у больших магазинов: о магазине и юр. данные, соцсети, связь, адрес, каталог, информация */
+.foot__grid { grid-template-columns: minmax(0, 1.5fr) repeat(5, minmax(0, 1fr)); gap: 32px 28px; }
+.foot h4 { margin: 0 0 16px; color: #8c8c8c; font: 600 12px/1.3 var(--display); letter-spacing: .1em; text-transform: uppercase; }
+.foot h4 + .foot__text { margin-top: -4px; }
+.foot__text { margin: 0 0 22px; color: #ededed; font-size: 15px; line-height: 1.5; }
+.foot ul { gap: 12px; font-size: 15px; }
+.foot ul a { color: #ededed; }
+.foot ul a:hover { color: #fff; text-decoration: underline; text-underline-offset: 3px; }
+.foot__icons a { display: inline-flex; align-items: center; gap: 12px; white-space: nowrap; }
+.foot__icons .ic { width: 20px; height: 20px; color: #8c8c8c; transition: color .2s; }
+.foot__icons a:hover .ic { color: #fff; }
+.foot__brand .foot__lead { margin: 18px 0 14px; color: #9a9a9a; font-size: 14px; line-height: 1.55; max-width: 26em; }
+.foot__legal { display: grid; gap: 4px; margin: 0; font-size: 13px; }
+.foot__legal div { display: flex; gap: 6px; flex-wrap: wrap; }
+.foot__legal dt { color: #fff; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+.foot__legal dd { margin: 0; color: #8c8c8c; font-variant-numeric: tabular-nums; }
+.foot__bottom { display: block; margin-top: clamp(36px, 4vw, 56px); padding: 26px 0 30px; border-top: 1px solid var(--night-line); background: #070707; color: #7a7a7a; }
+.foot .foot__badges { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px 26px; margin: 0 0 20px; padding: 0; list-style: none; }
+.foot__copy { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 0; margin: 0; font-size: 12.5px; }
+.foot__copy > * + *::before { content: '•'; margin: 0 12px; color: #4a4a4a; }
+.foot__copy a { color: #9a9a9a; }
+.foot__copy a:hover { color: #fff; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* Значки оплаты и доставки: одноцветные, свои стили */
+.pbadge { display: inline-flex; align-items: center; gap: 5px; height: 26px; color: #d9d9d9; font-weight: 800; font-size: 15px; letter-spacing: .01em; white-space: nowrap; opacity: .85; transition: opacity .2s; }
+.pbadge:hover { opacity: 1; }
+.pbadge--mir { font: 900 18px/1 var(--display); letter-spacing: -.02em; }
+.pbadge--visa { font-size: 20px; font-style: italic; font-weight: 900; letter-spacing: -.02em; }
+.pbadge--mastercard { position: relative; width: 40px; }
+.pbadge--mastercard i { position: absolute; top: 3px; width: 20px; height: 20px; border-radius: 50%; background: #d9d9d9; }
+.pbadge--mastercard i:first-child { left: 2px; }
+.pbadge--mastercard i:nth-child(2) { left: 16px; background: #8a8a8a; mix-blend-mode: screen; }
+.pbadge--sbp i { width: 16px; height: 16px; background: currentColor; clip-path: polygon(0 0, 100% 50%, 0 100%, 30% 50%); }
+.pbadge--yoomoney, .pbadge--split, .pbadge--dolyami { font-size: 14px; }
+.pbadge--pochta, .pbadge--yandex { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.pbadge--ems { font-style: italic; font-weight: 900; font-size: 19px; letter-spacing: .02em; }
+.pbadge--cdek { font: 900 17px/1 var(--display); letter-spacing: .02em; }
+.pbadge--boxberry { font-size: 15px; font-weight: 800; text-transform: lowercase; }
+
+/* Яндекс Карта над подвалом */
+.where { margin-top: clamp(44px, 5vw, 80px); background: var(--night); color: #fff; }
+.where__head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 18px 30px; padding-block: clamp(26px, 3vw, 40px) 22px; }
+.where__info h2 { display: flex; align-items: center; gap: 12px; margin: 0 0 14px; font: 800 clamp(18px, 1.9vw, 26px)/1.15 var(--display); text-transform: uppercase; }
+.where__info h2::before { content: ''; width: .75em; height: .75em; background: currentColor; -webkit-mask: var(--spark) center / contain no-repeat; mask: var(--spark) center / contain no-repeat; }
+.where__info ul { display: flex; flex-wrap: wrap; gap: 8px 26px; margin: 0; padding: 0; list-style: none; color: #d6d6d6; font-size: 15px; }
+.where__info li { display: inline-flex; align-items: center; gap: 8px; }
+.where__info .ic { width: 18px; height: 18px; color: #8c8c8c; }
+.where__info a:hover { color: #fff; }
+.where__note { margin: 10px 0 0; color: #9a9a9a; font-size: 14px; }
+.where__btns { display: flex; flex-wrap: wrap; gap: 10px; }
+.where__map { height: clamp(320px, 34vw, 460px); background: #e9e9e6; }
+.where__map iframe { display: block; width: 100%; height: 100%; border: 0; }
+.where + .subscribe { margin-top: 0; }
+
+/* Контакты и текстовые страницы */
+.contacts .infocard { display: block; color: inherit; transition: border-color .2s; }
+a.infocard:hover { border-color: var(--ink); }
+.socials { display: flex; flex-wrap: wrap; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.socials a { display: inline-flex; align-items: center; gap: 10px; padding: 10px 16px; border: 1px solid var(--line); border-radius: 10px; font-weight: 650; }
+.socials a:hover { border-color: var(--ink); }
+.page-contacts .where { margin-top: clamp(30px, 4vw, 56px); }
+.infopage { max-width: 860px; }
+.infopage__text { font-size: 16.5px; line-height: 1.65; color: var(--ink-2); }
+.infopage__text h2 { margin: 1.6em 0 .6em; font: 800 clamp(18px, 1.8vw, 22px)/1.2 var(--display); text-transform: uppercase; color: var(--ink); }
+.infopage__text h3 { margin: 1.4em 0 .5em; font-size: 18px; color: var(--ink); }
+.infopage__text ul { padding-left: 1.2em; }
+.infopage__text li + li { margin-top: .35em; }
+.infopage__text a { text-decoration: underline; text-underline-offset: 3px; }
+.infopage__date { margin-top: 30px; font-size: 13px; }
 
 /* ---------- Каталог, карточка модели, корзина ---------- */
 .crumbs { font-size: 13px; }
@@ -452,6 +509,7 @@ select, .field input, .field textarea, .price-range input { border-radius: 8px; 
 
 /* ---------- Планшет ---------- */
 @media (max-width: 1100px) {
+  .foot__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .cartbtn__t { display: none; }
   .cartbtn { width: 44px; padding: 0; }
   .cartbtn .cartbtn__n { left: auto; right: 1px; }
@@ -465,7 +523,10 @@ select, .field input, .field textarea, .price-range input { border-radius: 8px; 
   :root, html[data-season] { --head-h: 64px; }
   .util { display: none; }
   .logo__img, .head.is-scrolled .logo__img { height: 42px; }
-  .legal { grid-template-columns: minmax(0, 1fr); }
+  .foot__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .foot__brand { grid-column: 1 / -1; }
+  .where__btns { width: 100%; }
+  .where__btns .btn { flex: 1; }
   .head__in { gap: 6px; }
   .headsearch { display: none; }
   .head__find { display: inline-grid; }
@@ -490,6 +551,9 @@ select, .field input, .field textarea, .price-range input { border-radius: 8px; 
   .finder__stats { margin-top: 18px; }
 }
 @media (max-width: 720px) {
+  .foot__copy { flex-direction: column; align-items: center; text-align: center; }
+  .foot__copy > * + *::before { content: none; }
+  .foot .foot__badges { gap: 10px 20px; }
   .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 10px; }
   .rail__track > .card { flex-basis: 64vw; }
   .rail__all { display: inline-flex; }
@@ -521,3 +585,5 @@ select, .field input, .field textarea, .price-range input { border-radius: 8px; 
   .js .banner__dot.is-active i::after { animation: none; transform: scaleX(1); }
   .announce__msg { transition: none; }
 }
+.page-contacts .subscribe { margin-top: 0; }
+.cookie a { text-decoration: underline; text-underline-offset: 3px; }

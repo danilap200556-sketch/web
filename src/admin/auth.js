@@ -18,6 +18,7 @@ const ACCESS = {
   loyalty: ['owner'],
   traffic: ['owner', 'manager'],
   showcase: ['owner', 'editor'],
+  pages: ['owner', 'editor'],
   electronics: ['owner', 'editor'],
   delivery: ['owner'],
   users: ['owner'],

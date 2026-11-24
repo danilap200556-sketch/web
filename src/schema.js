@@ -267,6 +267,17 @@ const SCHEMA = [
      height INTEGER NOT NULL,
      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
    )`,
+  // --- Текстовые страницы из админки («О нас», соглашение, политика, FAQ): ссылки в подвале, колонка «Информация» ---
+  `CREATE TABLE IF NOT EXISTS webshop.pages (
+     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+     slug TEXT NOT NULL UNIQUE,
+     title TEXT NOT NULL,
+     body TEXT NOT NULL DEFAULT '',
+     published BOOLEAN NOT NULL DEFAULT FALSE,
+     in_footer BOOLEAN NOT NULL DEFAULT TRUE,
+     sort INTEGER NOT NULL DEFAULT 100,
+     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+   )`,
 ];
 
 module.exports = { SCHEMA };

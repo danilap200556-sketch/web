@@ -190,7 +190,10 @@ function createBot({ db, cfg, accounts, codes, fetchImpl = fetch, log = console 
     state.loop = null;
   }
 
-  return { enabled, username, linkUrl, createLink, handleUpdate, pollOnce, start, stop, sendToCustomer };
+  // Имя бота, если оно уже известно (из настройки или после первой ссылки входа): без запроса к Telegram
+  const knownName = () => state.name;
+
+  return { enabled, username, knownName, linkUrl, createLink, handleUpdate, pollOnce, start, stop, sendToCustomer };
 }
 
 module.exports = { createBot };

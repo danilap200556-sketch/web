@@ -9,7 +9,7 @@ test.before(async () => {
   tg = await fakeTelegram();
   shop = await startShop('adminloy', {
     SMS_PROVIDER: 'smsru', SMS_API_KEY: 'k', SMS_API_URL: sms.url, TRUST_PROXY: '1', SMTP_HOST: 'smtp.test', SMTP_USER: 'u', SMTP_PASS: 'p', SMTP_FROM: 'Shop <s@test.ru>',
-    TELEGRAM_BOT_TOKEN: '123456:TEST-token-abcdefghijklmnopqrstuvwxyz0123', TELEGRAM_CHAT_ID: '1', TELEGRAM_API_URL: tg.url,
+    TELEGRAM_BOT_TOKEN: '123456:TEST-token-abcdefghijklmnopqrstuvwxyz0123', TELEGRAM_CHAT_ID: '1', TELEGRAM_API_URL: tg.url, TELEGRAM_BOT_USERNAME: 'solehouse_test_bot',
   });
   pid = await addProduct(shop.db, { sku: 'AL-1_42', name: 'Кроссовки Nike Admin «Loyalty»', price: 10000, qty: 100 });
   await addAdmin(shop.db, 'mgr1', 'manager');

@@ -277,10 +277,7 @@ module.exports = function mount({ db, auth, render, fmt, router, settings, deliv
   // ---------- Вход покупателей: бот, SMS, почта ----------
   async function loginCard(req) {
     const chip = (ok, yes, no) => html`<span class="chip ${ok ? 'chip--green' : 'chip--gray'}">${ok ? yes : no}</span>`;
-    let name = '';
-    if (bot.enabled()) {   // имя бота узнаём у Telegram, но страница не должна ждать дольше пары секунд
-      try { name = await Promise.race([bot.username(), new Promise((r) => setTimeout(() => r(''), 2000))]); } catch { name = ''; }
-    }
+    const name = bot.enabled() ? bot.knownName() : '';   // страница настроек не ходит в Telegram: имя видно, когда оно уже известно
     const sent = (await db.query("SELECT COUNT(*)::int AS n FROM webshop.auth_codes WHERE channel = 'sms' AND created_at > NOW() - INTERVAL '1 day'")).rows[0].n;
     return html`<section class="card card--pad"><h2>Вход покупателей</h2>
       <p class="muted">Покупатель входит в личный кабинет по коду из Telegram или SMS либо по почте и паролю. Способы без настройки скрыты, остальные работают.</p>

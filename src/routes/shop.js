@@ -106,7 +106,7 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner }, 
           <div class="slide__cta"><a class="btn btn--lg" href="/catalog?sale=1&amp;sort=discount">Смотреть все скидки ${icon('arrow-right')}</a></div>
         </div>
         <div class="slide__pics" aria-hidden="true">
-          <i class="slide__stripe"></i>
+          <i class="streak streak--sale"></i>
           ${salePics.map((m, i) => html`<img class="slide__pic slide__pic--${i + 1}" src="${photoUrl(m.cover, 640)}" alt="" width="640" height="640" loading="lazy">`)}
         </div>
       </div>

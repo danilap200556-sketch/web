@@ -371,3 +371,15 @@ a.stat:hover { border-color: var(--line-strong); color: inherit; }
 .heromedia__progress[hidden] { display: none; }
 .heromedia__msg { flex: 1 1 100%; margin: 0; color: var(--muted, #6b6b70); }
 .heromedia__msg:empty { display: none; }
+.mform__sub { grid-column: 1 / -1; margin: 14px 0 0; font-size: 16px; }
+/* Логотип: превью на тёмном и светлом фоне и значок вкладки */
+.logobox { display: grid; gap: 16px; }
+.logobox__now { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.logobox__now p { flex-basis: 100%; margin: 0; }
+.logobox__pv { display: grid; place-items: center; height: 96px; min-width: 150px; padding: 14px 22px; border-radius: 12px; background: #fff; border: 1px solid var(--line, #e5e5e5); }
+.logobox__pv img { max-height: 64px; max-width: 220px; width: auto; height: auto; }
+.logobox__pv--dark { background: #0b0b0b; border-color: #0b0b0b; }
+.logobox__pv--icon { min-width: 0; padding: 14px; }
+.logobox__pv--icon img { width: 48px; height: 48px; border-radius: 10px; }
+.logobox__opts { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.side__logo { height: 36px; width: auto; flex: none; }

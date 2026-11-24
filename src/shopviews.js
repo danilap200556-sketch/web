@@ -5,6 +5,7 @@ const { icon, sprite } = require('./icons');
 const { rub, plural } = require('./util');
 const { DEPARTMENTS } = require('./model');
 const { SEASONS } = require('./seasons');
+const { logoUrls } = require('./logo');
 
 const SEASON_ICON = { winter: 'snow', spring: 'flower', summer: 'sun', autumn: 'leaf' };
 
@@ -114,13 +115,21 @@ function navLinks(ctx) {
   return out;
 }
 
-// Логотип словом: название магазина жирными заглавными, вторая половина длинного слова - контуром
-function logoWord(name) {
-  const n = String(name || '').trim();
-  const parts = n.split(/\s+/);
-  if (parts.length > 1) return html`<span class="logo__text">${parts[0]}<i>${parts.slice(1).join(' ')}</i></span>`;
-  if (n.length >= 8) { const k = Math.ceil(n.length / 2); return html`<span class="logo__text">${n.slice(0, k)}<i>${n.slice(k)}</i></span>`; }
-  return html`<span class="logo__text">${n}</span>`;
+// Логотип картинкой: свой из админки или по умолчанию. variant: light - на тёмном фоне (шапка, подвал), dark - на светлом
+function logoImg(s, variant, cls = '') {
+  const lu = logoUrls(s);
+  const h = 48;
+  const w = Math.max(1, Math.round((lu.w / lu.h) * h));
+  return html`<img class="logo__img ${cls}" src="${variant === 'light' ? lu.light : lu.dark}" alt="${s.shopName}" width="${w}" height="${h}">${s.logoText ? html`<span class="logo__text">${s.shopName}</span>` : ''}`;
+}
+
+// «ИНДИВИДУАЛЬНЫЙ ПРЕДПРИНИМАТЕЛЬ ИВАНОВ ИВАН ИВАНОВИЧ» -> «ИП Иванов Иван Иванович»; прочее - как есть
+function sellerName(name) {
+  const n = String(name || '').trim().replace(/\s+/g, ' ');
+  const m = /^(?:индивидуальный предприниматель|ип)\s+(.+)$/i.exec(n);
+  if (!m) return n;
+  const fio = m[1] === m[1].toUpperCase() ? m[1].toLowerCase().replace(/(^|[\s-])([a-zа-яё])/g, (x, p1, c) => p1 + c.toUpperCase()) : m[1];
+  return `ИП ${fio}`;
 }
 
 // Ссылка на Telegram из настроек: @имя, t.me/имя или полный адрес
@@ -140,6 +149,11 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
   const season = SEASONS[ctx.season];
   const tel = String(s.phone || '').replace(/[^+\d]/g, '');
   const tg = telegramUrl(s.telegram);
+  const lu = logoUrls(s);
+  const req0 = (s.payment && s.payment.requisites) || {};
+  const legal = s.legal || {};
+  const seller = sellerName(req0.name);
+  const ogrn = String(legal.ogrnip || '');
   return html`<!doctype html>
 <html lang="ru" data-season="${ctx.season}">
 <head>
@@ -154,8 +168,10 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
   <meta property="og:description" content="${desc}">
   ${og && og.image ? html`<meta property="og:image" content="${ctx.baseUrl}${og.image}">` : ''}
   <meta name="theme-color" content="#000000">
-  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="${lu.icon}" type="${lu.custom ? 'image/png' : 'image/svg+xml'}">
+  ${lu.custom ? html`<link rel="apple-touch-icon" href="${lu.icon}">` : ''}
   <link rel="preload" href="/static/fonts/inter-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/fonts/unbounded-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/static/css/shop.css?v=${ctx.assetV}">
   <link rel="stylesheet" href="/static/css/design.css?v=${ctx.assetV}">
   <link rel="stylesheet" href="/static/css/v4.css?v=${ctx.assetV}">
@@ -169,10 +185,10 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
     <div class="wrap announce__in">
       <button class="announce__arrow" type="button" data-ticker-prev aria-label="Предыдущее сообщение">${icon('chevron-left')}</button>
       <div class="announce__msgs" aria-live="polite">
-        <span class="announce__msg is-on">Только оригинальная продукция</span>
+        <span class="announce__msg is-on"><i class="spark" aria-hidden="true"></i> Только оригинальная продукция</span>
         ${ctx.freeFrom > 0 ? html`<span class="announce__msg">Бесплатная доставка от ${rub(ctx.freeFrom)}</span>` : ''}
         <span class="announce__msg">${icon(SEASON_ICON[ctx.season])} ${season.title}: новая подборка уже на витрине</span>
-        <span class="announce__msg">Самовывоз с примеркой · обмен и возврат 7 дней</span>
+        <span class="announce__msg"><i class="spark" aria-hidden="true"></i> Самовывоз с примеркой · обмен и возврат 7 дней</span>
       </div>
       <button class="announce__arrow" type="button" data-ticker-next aria-label="Следующее сообщение">${icon('chevron-right')}</button>
     </div>
@@ -194,7 +210,7 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
   <header class="head" id="head">
     <div class="wrap head__in">
       <button class="head__burger iconbtn" type="button" data-nav-toggle aria-label="Меню" aria-expanded="false" aria-controls="drawer">${icon('menu')}</button>
-      <a class="logo" href="/" aria-label="${s.shopName}">${logoWord(s.shopName)}</a>
+      <a class="logo" href="/" aria-label="${s.shopName}: на главную">${logoImg(s, 'light')}</a>
       <button class="headsearch" type="button" data-search-open aria-label="Поиск">${icon('search')}<span>Поиск: модель, бренд или артикул</span><kbd>/</kbd></button>
       <div class="head__tools">
         <button class="iconbtn head__find" type="button" data-search-open aria-label="Поиск">${icon('search')}</button>
@@ -222,7 +238,7 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
     <div class="drawer__scrim" data-drawer-close></div>
     <aside class="drawer__panel" role="dialog" aria-modal="true" aria-label="Меню">
       <div class="drawer__top">
-        <a class="logo" href="/" aria-label="${s.shopName}">${logoWord(s.shopName)}</a>
+        <a class="logo" href="/" aria-label="${s.shopName}: на главную">${logoImg(s, 'dark')}</a>
         <button class="iconbtn" type="button" data-drawer-close aria-label="Закрыть меню">${icon('close')}</button>
       </div>
       <nav class="drawer__nav" aria-label="Разделы">
@@ -261,7 +277,7 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
   <footer class="foot">
     <div class="wrap foot__grid">
       <div class="foot__brand">
-        <a class="logo logo--foot" href="/" aria-label="${s.shopName}">${logoWord(s.shopName)}</a>
+        <a class="logo logo--foot" href="/" aria-label="${s.shopName}: на главную">${logoImg(s, 'light')}</a>
         <p class="foot__lead">Оригинальные кроссовки, кеды, ботинки и одежда. Доставляем по всей России, примерка при самовывозе.</p>
         <ul class="foot__pay" aria-label="Способы оплаты"><li>СБП</li><li>МИР</li><li>Visa</li><li>Mastercard</li><li>Перевод</li></ul>
       </div>
@@ -294,10 +310,21 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
         </ul>
       </div>
     </div>
-    <div class="foot__word" aria-hidden="true">${s.shopName}</div>
+    <div class="wrap">
+      <section class="legal" aria-label="Сведения о продавце">
+        <p class="legal__about">${legal.about || `${s.shopName} - магазин оригинальной обуви, одежды и аксессуаров.`}</p>
+        <dl class="legal__list">
+          ${seller ? html`<div><dt>Продавец</dt><dd>${seller}</dd></div>` : ''}
+          ${req0.inn ? html`<div><dt>ИНН</dt><dd>${req0.inn}</dd></div>` : ''}
+          ${ogrn ? html`<div><dt>${ogrn.length === 13 ? 'ОГРН' : 'ОГРНИП'}</dt><dd>${ogrn}</dd></div>` : ''}
+          ${legal.address || s.address ? html`<div><dt>${legal.address ? 'Юридический адрес' : 'Адрес'}</dt><dd>${legal.address || s.address}</dd></div>` : ''}
+        </dl>
+      </section>
+    </div>
     <div class="wrap foot__bottom">
-      <span>© ${new Date().getFullYear()} ${s.shopName}</span>
-      <span>Цены и наличие обновляются автоматически из складской системы</span>
+      <span>Интернет-магазин © ${s.shopName} ${new Date().getFullYear()}</span>
+      <span class="foot__links"><a href="/delivery">Доставка и оплата</a><a href="/delivery#return">Обмен и возврат</a></span>
+      <span>Цены и наличие обновляются автоматически</span>
     </div>
   </footer>
   <div class="cookie" id="cookie" hidden>
@@ -315,4 +342,4 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
 
 const countLabel = (n) => `${n} ${plural(n, 'модель', 'модели', 'моделей')}`;
 
-module.exports = { shopPage, card, favBtn, favSlugs, telegramUrl, pagination, photoUrl, sizeRange, badgeOf, priceBlock, countLabel, SEASON_ICON, esc };
+module.exports = { shopPage, card, favBtn, favSlugs, telegramUrl, sellerName, pagination, photoUrl, sizeRange, badgeOf, priceBlock, countLabel, SEASON_ICON, esc };

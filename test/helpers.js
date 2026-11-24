@@ -1,5 +1,6 @@
 'use strict';
 // Общее для интеграционных тестов: отдельная база, схема склада, магазин на случайном порту, клиент с cookie.
+const http = require('node:http');
 const { Client } = require('pg');
 const sharp = require('sharp');
 const { load } = require('../src/config');
@@ -114,4 +115,22 @@ async function adminLogin(base, username, password) {
   return { c, csrf };
 }
 
-module.exports = { startShop, client, addProduct, addSitePrice, ymd, addAdmin, adminLogin, jpeg };
+// Поддельный SMS.ru: запоминает отправленное, ответ можно переключить (mode.fail - ответ с ошибкой, mode.http - код ответа)
+async function fakeSmsRu() {
+  const calls = [];
+  const mode = { fail: false, http: 200 };
+  const server = http.createServer((req, res) => {
+    const u = new URL(req.url, 'http://x');
+    if (u.pathname !== '/sms/send') { res.writeHead(404); return res.end(); }
+    const call = { apiId: u.searchParams.get('api_id'), to: u.searchParams.get('to'), msg: u.searchParams.get('msg'), from: u.searchParams.get('from') };
+    calls.push(call);
+    res.writeHead(mode.http, { 'content-type': 'application/json' });
+    if (mode.http !== 200) return res.end('{}');
+    if (mode.fail) return res.end(JSON.stringify({ status: 'ERROR', status_code: 200, status_text: 'Неправильный api_id' }));
+    res.end(JSON.stringify({ status: 'OK', status_code: 100, sms: { [call.to]: { status: 'OK', status_code: 100, sms_id: `000000-${calls.length}` } }, balance: 100 }));
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  return { calls, mode, url: `http://127.0.0.1:${server.address().port}`, close: () => new Promise((r) => server.close(r)) };
+}
+
+module.exports = { fakeSmsRu, startShop, client, addProduct, addSitePrice, ymd, addAdmin, adminLogin, jpeg };

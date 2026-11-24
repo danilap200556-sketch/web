@@ -206,7 +206,10 @@ function createPayments({ db, cfg, settings, notifier, fetchImpl = fetch }) {
       const upd = await c.query("UPDATE webshop.orders SET status = 'paid', updated_at = NOW() WHERE id = $1 AND status IN ('new', 'confirmed') RETURNING id", [pay.order_id]);
       if (upd.rowCount) {
         await c.query("INSERT INTO webshop.order_events (order_id, kind, text) VALUES ($1, 'status', $2)", [pay.order_id, `Оплачено картой (ТБанк, платёж №${pid})`]);
-        if (notifier) await notifier.enqueue(c, pay.order_id, 'order_paid');
+        if (notifier) {
+          await notifier.enqueue(c, pay.order_id, 'order_paid');
+          await notifier.enqueueCustomerStatus(c, pay.order_id, 'paid');
+        }
       }
     });
     if (notifier) notifier.kick();

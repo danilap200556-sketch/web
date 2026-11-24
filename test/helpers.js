@@ -175,7 +175,7 @@ async function loginAs(shop, c, phone, { name = 'Тест', fresh = false } = {}
 
 let placeSeq = 0;
 // Оформляет заказ самовывозом с оплатой при получении (c - клиент с cookie, чтобы заказывать вошедшим; pid - один товар или список)
-async function placeOrder(shop, pid, { phone = '89160000001', qty = 1, comment = '', c = client(shop.base), delivery = 'pickup', name = 'Анна' } = {}) {
+async function placeOrder(shop, pid, { phone = '89160000001', qty = 1, comment = '', c = client(shop.base), delivery = 'pickup', name = 'Анна', pay = 'cod' } = {}) {
   await c.get('/');
   for (const p of [].concat(pid)) for (let i = 0; i < qty; i++) await c.post('/cart/add', { pid: p });
   const co = (await c.get('/checkout')).text;
@@ -183,7 +183,7 @@ async function placeOrder(shop, pid, { phone = '89160000001', qty = 1, comment =
   const h = shop.cfg.trustProxy ? { headers: { 'x-forwarded-for': `10.9.${(++placeSeq >> 8) & 255}.${placeSeq & 255}` } } : {};
   const r = await c.post('/checkout', {
     idem: /name="idem" value="([^"]+)"/.exec(co)[1], name, phone, delivery,
-    point: /name="point" value="(\d+)"/.exec(co)[1], pay: 'cod', consent: '1', comment,
+    point: /name="point" value="(\d+)"/.exec(co)[1], pay, consent: '1', comment,
   }, h);
   assert.equal(r.status, 303, r.text.slice(0, 200));
   const number = /\/order\/(\d+)/.exec(r.location)[1];

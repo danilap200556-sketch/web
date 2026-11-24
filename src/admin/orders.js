@@ -12,7 +12,7 @@ const NEXT_LABEL = { new: 'Подтвердить заказ', confirmed: 'От�
 
 const { EXT_BASE } = require('../ext');
 
-module.exports = function mount({ db, auth, render, fmt, chip, router, catalog, writeoff, partner }) {
+module.exports = function mount({ db, auth, render, fmt, chip, router, catalog, writeoff, partner, notifier }) {
   // ---------- Список ----------
   router.get('/orders', auth.require('orders'), async (req, res, next) => {
     try {
@@ -205,9 +205,10 @@ module.exports = function mount({ db, auth, render, fmt, chip, router, catalog, 
         await c.query('UPDATE webshop.orders SET status = $2, updated_at = NOW() WHERE id = $1', [id, status]);
         await c.query("INSERT INTO webshop.order_events (order_id, admin_name, kind, text) VALUES ($1, $2, 'status', $3)",
           [id, who(req), `Статус: ${STATUSES[cur.status].title} → ${STATUSES[status].title}${note ? '. ' + note : ''}`]);
+        await notifier.enqueueCustomerStatus(c, id, status);   // сообщение покупателю в Telegram, если он привязал
         return cur.status;
       });
-      if (changed) await writeoff.sync().catch(() => {}); // очередь списания в приложении: собран - поставить, отменён - снять
+      if (changed) { notifier.kick(); await writeoff.sync().catch(() => {}); } // очередь списания в приложении: собран - поставить, отменён - снять
       catalog.invalidate();
       res.flash('ok', changed ? `Статус изменён: ${STATUSES[status].title}` : 'Статус не изменился');
       res.redirect(`/admin/orders/${id}`);

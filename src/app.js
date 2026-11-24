@@ -44,9 +44,6 @@ function createApp(cfg, db, opts = {}) {
   const media = createMedia(db, { partner });
   const heroMedia = createHeroMedia({ db, settings });
   const writeoff = createWriteoff(db);
-  const notifier = createNotifier({ db, cfg });
-  const carriers = createCarriers(cfg, { fetchImpl: opts.fetchImpl });
-  const payments = createPayments({ db, cfg, settings, notifier, fetchImpl: opts.fetchImpl });
   // Личный кабинет: аккаунты, сессии, одноразовые коды, каналы доставки кодов (SMS, Telegram, почта), лояльность
   const accounts = createAccounts({ db });
   const sessions = createSessions({ db, cfg });
@@ -55,6 +52,9 @@ function createApp(cfg, db, opts = {}) {
   const mail = createMail(cfg.smtp, { transport: opts.mailTransport });
   const bot = createBot({ db, cfg, accounts, codes, fetchImpl: opts.fetchImpl });
   const loyalty = createLoyalty({ db, settings });
+  const notifier = createNotifier({ db, cfg, bot });
+  const carriers = createCarriers(cfg, { fetchImpl: opts.fetchImpl });
+  const payments = createPayments({ db, cfg, settings, notifier, fetchImpl: opts.fetchImpl });
   const services = { cfg, db, settings, catalog, delivery, carts, tracker, media, heroMedia, writeoff, notifier, carriers, payments, partner, accounts, sessions, codes, sms, mail, bot, loyalty };
   app.locals.services = services;
 

@@ -15,6 +15,7 @@ const ACCESS = {
   dashboard: ['owner', 'manager'],
   orders: ['owner', 'manager'],
   customers: ['owner', 'manager'],
+  loyalty: ['owner'],
   traffic: ['owner', 'manager'],
   showcase: ['owner', 'editor'],
   electronics: ['owner', 'editor'],

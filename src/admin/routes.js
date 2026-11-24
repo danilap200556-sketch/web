@@ -211,6 +211,7 @@ module.exports = function mount(app, services) {
   // Остальные разделы
   require('./orders')(ctx);
   require('./customers')(ctx);
+  require('./loyalty')(ctx);
   require('./showcase')(ctx);
   require('./electronics')(ctx);
   require('./manage')(ctx);

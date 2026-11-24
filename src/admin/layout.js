@@ -9,6 +9,7 @@ const NAV = [
   { key: 'dashboard', href: '/admin', icon: 'dashboard', title: 'Сводка' },
   { key: 'orders', href: '/admin/orders', icon: 'orders', title: 'Заказы', badge: 'fresh' },
   { key: 'customers', href: '/admin/customers', icon: 'users', title: 'Клиенты' },
+  { key: 'loyalty', href: '/admin/loyalty', icon: 'tag', title: 'Лояльность' },
   { key: 'traffic', href: '/admin/traffic', icon: 'chart', title: 'Посещаемость' },
   { key: 'showcase', href: '/admin/showcase', icon: 'palette', title: 'Витрина и каталог' },
   { key: 'electronics', href: '/admin/electronics', icon: 'chip', title: 'Электроника' },

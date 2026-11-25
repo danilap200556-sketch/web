@@ -587,3 +587,15 @@ a.infocard:hover { border-color: var(--ink); }
 }
 .page-contacts .subscribe { margin-top: 0; }
 .cookie a { text-decoration: underline; text-underline-offset: 3px; }
+
+/* Защита от переполнения: широкий шрифт Unbounded не должен вылезать из своего блока в соседние.
+   Заголовок блока «Электроника» подгоняется под ширину колонки, длинные слова переносятся. */
+.promo__copy { container-type: inline-size; min-width: 0; }
+.promo h2 { font-size: clamp(20px, 9.4cqw, 56px); overflow-wrap: anywhere; }   /* «ЭЛЕКТРОНИКА» шрифтом Unbounded занимает около 9,6 высот шрифта */
+.promo__copy p, .promo__item b, .promo__item small { overflow-wrap: anywhere; }
+.slide--new .slide__title { overflow-wrap: anywhere; hyphens: auto; }
+@media (max-width: 480px) {
+  .slide--new .slide__title { font-size: clamp(16px, 5.4vw, 22px); }
+  .slide__new { font-size: clamp(30px, 10vw, 44px); }
+  .slide--new .slide__copy { padding: 12px 10px; }
+}

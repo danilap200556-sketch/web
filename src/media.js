@@ -7,6 +7,10 @@
 // цвет фона читается по углам снимка, и если он светлый и ровный, фон приводится к белому (дальше CSS
 // накладывает его на цвет карточки режимом multiply, и фото сливается с карточкой).
 const sharp = require('sharp');
+const { studio } = require('./photofix');
+
+// Версия вида фото: входит в ключи кэша и в адрес картинки (?v=), чтобы браузеры не держали старое фото после смены обработки
+const LOOK = 2;
 
 sharp.cache(false);
 sharp.concurrency(2);
@@ -66,7 +70,7 @@ async function analyse(data) {
   }
 }
 
-function createMedia(db, { partner } = {}) {
+function createMedia(db, { partner, studio: useStudio = true } = {}) {
   const cache = new ByteLru(MAX_BYTES);
   const inflight = new Map();
   const infoCache = new Map(); // id фото -> { gain, clean }
@@ -94,6 +98,9 @@ function createMedia(db, { partner } = {}) {
   async function render(id, w, webp) {
     const data = await load(id);
     if (!data) return null;
+    if (useStudio) {
+      try { return await studio(data, w, webp); } catch { /* файл не читается как картинка: ниже обычная обработка */ }
+    }
     const { gain } = await info(id, data);
     let img = sharp(data).rotate().resize({ width: w, withoutEnlargement: true });
     if (gain) img = img.linear(gain, [0, 0, 0]);
@@ -105,6 +112,9 @@ function createMedia(db, { partner } = {}) {
   async function renderExt(id, idx, w, webp) {
     const src = partner ? await partner.fetchImage(id, idx) : null;
     if (!src) return null;
+    if (useStudio) {
+      try { return { ...(await studio(src.buf, w, webp)), at: Date.now() }; } catch { /* ниже обычная обработка */ }
+    }
     let img = sharp(src.buf).rotate().flatten({ background: '#ffffff' }).resize({ width: w, withoutEnlargement: true });
     img = webp ? img.webp({ quality: 80 }) : img.jpeg({ quality: 82, mozjpeg: true });
     return { buf: await img.toBuffer(), type: webp ? 'image/webp' : 'image/jpeg', at: Date.now() };
@@ -116,7 +126,7 @@ function createMedia(db, { partner } = {}) {
       const w = parseInt(req.params.w, 10);
       if (!partner || !Number.isInteger(n) || n <= 0 || !WIDTHS.has(w)) return res.status(404).end();
       const webp = /image\/webp/.test(req.get('accept') || '');
-      const key = `x${n}:${w}:${webp ? 'w' : 'j'}`;
+      const key = `x${n}:${w}:${webp ? 'w' : 'j'}:${LOOK}`;
       res.set({ 'Cache-Control': 'public, max-age=86400', Vary: 'Accept' });
       let hit = cache.get(key);
       if (hit && Date.now() - hit.at > 3600_000) hit = null;
@@ -135,7 +145,7 @@ function createMedia(db, { partner } = {}) {
       const w = parseInt(req.params.w, 10);
       if (!Number.isInteger(id) || id <= 0 || !WIDTHS.has(w)) return res.status(404).end();
       const webp = /image\/webp/.test(req.get('accept') || '');
-      const key = `${id}:${w}:${webp ? 'w' : 'j'}`;
+      const key = `${id}:${w}:${webp ? 'w' : 'j'}:${LOOK}`;
       const etag = `"${key}"`;
       res.set({ 'Cache-Control': 'public, max-age=2592000, immutable', Vary: 'Accept', ETag: etag });
       if (req.get('if-none-match') === etag) return res.status(304).end();
@@ -157,4 +167,4 @@ function createMedia(db, { partner } = {}) {
   return { mount, isClean, analyse };
 }
 
-module.exports = { createMedia, analyse };
+module.exports = { createMedia, analyse, LOOK };

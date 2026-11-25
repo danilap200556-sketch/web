@@ -88,7 +88,7 @@ test.describe('оформление v2: главная, корзина-пане�
     assert.match(l.title, /Design 1/);
     assert.equal(l.href.startsWith('/p/'), true);
     assert.match(l.meta, /Размер 42/);
-    assert.match(l.img, /^\/media\/p\/\d+\/360\.jpg$/);
+    assert.match(l.img, /^\/media\/p\/\d+\/360\.jpg(\?v=\d+)?$/);
     assert.equal(l.out, false);
     assert.ok(d.free && d.free.threshold === 15000, 'порог бесплатной доставки из админки');
     assert.equal(d.free.left, 0);

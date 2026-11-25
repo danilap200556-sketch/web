@@ -60,6 +60,8 @@ function load(env = process.env) {
         height: intEnv(env.PARCEL_HEIGHT_CM, 14),
       },
     },
+    // Единый вид фото (квадрат, белый фон, товар по центру). PHOTO_STUDIO=off отдаёт фото как есть.
+    photoStudio: env.PHOTO_STUDIO !== 'off',
     // Каталог электроники партнёра (Sergeev Electronics). По умолчанию включён на боевом сервере, в разработке и тестах выключен.
     // PARTNER_SYNC=off выключает; PARTNER_SECTIONS - список разделов партнёра через запятую; PARTNER_DELAY_MS - пауза между запросами к их сайту.
     partner: {

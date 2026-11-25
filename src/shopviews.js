@@ -5,13 +5,14 @@ const { icon, sprite } = require('./icons');
 const { rub, plural } = require('./util');
 const { DEPARTMENTS } = require('./model');
 const { SEASONS } = require('./seasons');
+const { LOOK } = require('./media');
 const { logoUrls } = require('./logo');
 const { socialList, badgeHtml, BADGES, DEFAULT_BADGES, mapFor } = require('./site');
 
 const SEASON_ICON = { winter: 'snow', spring: 'flower', summer: 'sun', autumn: 'leaf' };
 
 // Отрицательный номер - фото товара партнёра (см. ext.js)
-const photoUrl = (id, w = 640) => (id < 0 ? `/media/x/${-id}/${w}.jpg` : `/media/p/${id}/${w}.jpg`);
+const photoUrl = (id, w = 640) => (id < 0 ? `/media/x/${-id}/${w}.jpg?v=${LOOK}` : `/media/p/${id}/${w}.jpg?v=${LOOK}`);
 
 // Диапазон размеров в наличии: "38-44" или "38 · 40 · 44"
 function sizeRange(m) {

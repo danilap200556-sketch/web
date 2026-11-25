@@ -230,6 +230,7 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
   <link rel="stylesheet" href="/static/css/design.css?v=${ctx.assetV}">
   <link rel="stylesheet" href="/static/css/v4.css?v=${ctx.assetV}">
   <link rel="stylesheet" href="/static/css/account.css?v=${ctx.assetV}">
+  <link rel="stylesheet" href="/static/css/extra.css?v=${ctx.assetV}">
   <script src="/static/js/boot.js?v=${ctx.assetV}"></script>
   ${jsonLd ? html`<script type="application/ld+json">${raw(JSON.stringify(jsonLd).replace(/</g, '\\u003c'))}</script>` : ''}
 </head>

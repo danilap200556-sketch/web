@@ -6,6 +6,7 @@ const { DEPARTMENTS } = require('../model');
 const { SEASONS, heroFor, seasonPicks } = require('../seasons');
 const { card, pagination, photoUrl, countLabel, priceBlock, favBtn, favSlugs, telegramUrl, mapBlock, SEASON_ICON } = require('../shopviews');
 const { socialList, renderText } = require('../site');
+const { guideBlock, guidePage } = require('../sizecharts');
 const { quote, PAY_METHODS } = require('../delivery');
 
 const SIZES_QUICK = ['36', '37', '38', '39', '40', '41', '42', '43', '44', '45', '46'];
@@ -359,7 +360,8 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner, pa
             ${f.types.length > 1 ? html`<details class="fgroup" open><summary>Тип</summary>
               <div class="fgroup__body">${f.types.map(([t, n]) => html`<label class="check"><input type="checkbox" name="type" value="${t}" ${c.types.includes(t) ? raw('checked') : ''}><span>${t}</span><i>${n}</i></label>`)}</div></details>` : ''}
             ${f.sizes.length ? html`<details class="fgroup" open><summary>Размер</summary>
-              <div class="fgroup__body sizes">${f.sizes.map(([s, n]) => html`<label class="size" title="${n} ${plural(n, 'модель', 'модели', 'моделей')}"><input type="checkbox" name="size" value="${s}" ${c.sizes.includes(s) ? raw('checked') : ''}><span>${s}</span></label>`)}</div></details>` : ''}
+              <div class="fgroup__body sizes">${f.sizes.map(([s, n]) => html`<label class="size" title="${n} ${plural(n, 'модель', 'модели', 'моделей')}"><input type="checkbox" name="size" value="${s}" ${c.sizes.includes(s) ? raw('checked') : ''}><span>${s}</span></label>`)}</div>
+              <a class="sizelink" href="/razmery">Таблица размеров</a></details>` : ''}
             ${brandsShown.length ? html`<details class="fgroup" open><summary>Бренд</summary>
               <div class="fgroup__body fgroup__body--scroll">${brandsShown.map(([b, n]) => html`<label class="check"><input type="checkbox" name="brand" value="${b}" ${c.brands.includes(b) ? raw('checked') : ''}><span>${b}</span><i>${n}</i></label>`)}</div></details>` : ''}
             <details class="fgroup" ${c.min || c.max ? raw('open') : ''}><summary>Цена, ₽</summary>
@@ -459,6 +461,7 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner, pa
             <li>${icon('shield')}<span><b>Оригинал</b>, проверяем каждую пару</span></li>`}
           </ul>
           <details class="acc" ${descr ? raw('open') : ''}><summary>Описание</summary><div class="acc__body">${descr ? descr.split(/\n{2,}/).map((p) => html`<p>${p}</p>`) : html`<p>${m.fullName}. Артикул: ${m.key}.</p>`}</div></details>
+          ${isExt ? '' : guideBlock({ brand: m.brand, dept: m.dept, sizes: m.sizes.filter((s) => s.qty > 0).map((s) => s.size) })}
           <details class="acc"><summary>Доставка и оплата</summary><div class="acc__body">
             ${d.methods.filter((x) => x.active).map((x) => html`<p><b>${x.title}</b>${x.eta ? ' · ' + x.eta : ''}${x.price ? ' · от ' + rub(x.price) : ' · бесплатно'}</p>`)}
             <p><a href="/delivery">Подробнее о доставке и возврате</a></p></div></details>
@@ -545,6 +548,12 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner, pa
   });
 
   // ---------- Текстовые страницы из админки («О нас», соглашение, политика...) ----------
+  // Таблицы размеров по брендам (в карточках обуви и одежды они же внутри товара)
+  app.get('/razmery', shopCtx, (req, res) => {
+    tracker.record(req, res, 'page', { path: '/razmery' });
+    send(req, res, { title: 'Таблицы размеров', description: 'Таблицы размеров обуви Nike, adidas, New Balance и других брендов, мерки одежды и как измерить стопу.', body: guidePage(), bodyClass: 'page-plain', canonical: '/razmery' });
+  });
+
   app.get('/info/:slug', shopCtx, async (req, res, next) => {
     try {
       const p = await pages.bySlug(String(req.params.slug).toLowerCase());
@@ -626,7 +635,7 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner, pa
     try {
       await catalog.ensure();
       const base = cfg.publicUrl || `${req.protocol}://${req.get('host')}`;
-      const urls = ['/', '/catalog', '/brands', '/contacts', '/delivery', ...(await pages.all()).filter((p) => p.published && p.body.trim()).map((p) => `/info/${p.slug}`), ...catalog.models.filter((m) => m.inStock).slice(0, 40000).map((m) => `/p/${m.slug}`)];
+      const urls = ['/', '/catalog', '/brands', '/contacts', '/delivery', '/razmery', ...(await pages.all()).filter((p) => p.published && p.body.trim()).map((p) => `/info/${p.slug}`), ...catalog.models.filter((m) => m.inStock).slice(0, 40000).map((m) => `/p/${m.slug}`)];
       res.type('application/xml').send('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' +
         urls.map((u) => `<url><loc>${base}${encodeURI(u)}</loc></url>`).join('') + '</urlset>');
     } catch (e) { next(e); }

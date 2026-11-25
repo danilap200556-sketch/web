@@ -1,0 +1,17 @@
+/* Дополнения витрины: таблицы размеров, категории и фильтры электроники. Цвета и размеры берутся из переменных витрины. */
+.sizetable { overflow-x: auto; margin: 10px 0; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.sizetable table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+.sizetable th, .sizetable td { padding: 8px 12px; text-align: center; white-space: nowrap; }
+.sizetable thead th { background: var(--bg); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); position: sticky; top: 0; }
+.sizetable tbody tr { border-top: 1px solid var(--line); }
+.sizetable tbody th { font-weight: 700; }
+.sizetable tr.is-have { background: color-mix(in srgb, var(--accent) 16%, transparent); font-weight: 650; }
+.sizeguide .sizetable { max-height: 340px; overflow-y: auto; }
+.sizelink { display: inline-block; margin-top: 8px; font-size: 13.5px; font-weight: 600; border-bottom: 1.5px solid var(--line); }
+.sizelink:hover { border-color: var(--ink); }
+.sizepage { padding-bottom: clamp(32px, 6vw, 72px); }
+.sizepage h2 { margin: 36px 0 6px; font-size: clamp(22px, 2.4vw, 30px); }
+.sizepage h3 { margin: 18px 0 4px; font-size: 18px; }
+.sizepage__nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 8px; }
+.sizepage__nav a { padding: 8px 14px; border: 1px solid var(--line); border-radius: 999px; font-weight: 600; font-size: 14px; background: var(--surface); transition: background .15s, color .15s, border-color .15s; }
+.sizepage__nav a:hover { background: var(--ink); color: #fff; border-color: var(--ink); }

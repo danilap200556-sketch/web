@@ -19,7 +19,7 @@ function createNotifier({ db, cfg, bot = null, log = console }) {
   const chats = n.telegramChatIds || [];
   const api = n.telegramApi || 'https://api.telegram.org';
   const siteUrl = cfg.publicUrl || '';
-  const state = { running: false, timer: null };
+  const state = { running: false, again: false, timer: null };
 
   const enabled = () => Boolean(token && chats.length);
   // Сообщения покупателям (статус заказа) нужны только токен бота; чаты сотрудников для них не обязательны
@@ -123,25 +123,34 @@ function createNotifier({ db, cfg, bot = null, log = console }) {
   }
 
   // Берёт готовые к отправке строки (с «арендой», чтобы два процесса не слали одно и то же) и отправляет
+  // Сигнал run(), пришедший посреди прохода (например, kick() после смены статуса, пока шлётся другое сообщение), нельзя
+  // отбрасывать: строка могла попасть в очередь уже после последней выборки этого прохода, и без повтора она ждала бы
+  // следующего тика таймера (30 секунд). Поэтому он запоминается (state.again), и проход повторяется.
   async function run() {
-    if (state.running || !(enabled() || customerEnabled())) return;
+    if (!(enabled() || customerEnabled())) return;
+    if (state.running) { state.again = true; return; }
     state.running = true;
     try {
-      for (let guard = 0; guard < 20; guard++) {
-        const { rows } = await db.query(
-          `UPDATE webshop.outbox SET attempts = attempts + 1, next_at = NOW() + make_interval(secs => $1)
-            WHERE id IN (SELECT id FROM webshop.outbox WHERE sent_at IS NULL AND attempts < $2 AND next_at <= NOW()
-                          ORDER BY id LIMIT 5 FOR UPDATE SKIP LOCKED)
-            RETURNING id, kind, order_id, payload, attempts`, [LEASE_SEC, MAX_ATTEMPTS]);
-        if (!rows.length) break;
-        for (const row of rows) {
-          try { await deliver(row); } catch (e) { log.error('[notify]', scrub(e.message)); }
+      for (let pass = 0; pass < 5; pass++) {
+        state.again = false;
+        for (let guard = 0; guard < 20; guard++) {
+          const { rows } = await db.query(
+            `UPDATE webshop.outbox SET attempts = attempts + 1, next_at = NOW() + make_interval(secs => $1)
+              WHERE id IN (SELECT id FROM webshop.outbox WHERE sent_at IS NULL AND attempts < $2 AND next_at <= NOW()
+                            ORDER BY id LIMIT 5 FOR UPDATE SKIP LOCKED)
+              RETURNING id, kind, order_id, payload, attempts`, [LEASE_SEC, MAX_ATTEMPTS]);
+          if (!rows.length) break;
+          for (const row of rows) {
+            try { await deliver(row); } catch (e) { log.error('[notify]', scrub(e.message)); }
+          }
         }
+        if (!state.again) break;
       }
     } catch (e) {
       log.error('[notify]', scrub(e.message));
     } finally {
       state.running = false;
+      state.again = false;
     }
   }
 

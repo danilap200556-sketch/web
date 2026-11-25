@@ -52,6 +52,32 @@ test('смена статуса в админке: покупатель полу
   assert.equal(msgsTo(tgId).length, 2, 'повтор не дублирует');
 });
 
+test('сигнал «отправь сейчас» не теряется, если пришёл посреди прохода: сообщение не ждёт следующего тика', async () => {
+  const { tgId, orderId } = await linkedOrder('79160000712');
+  await waitFor(async () => (msgsTo('111').length ? true : null));          // уведомление сотрудникам ушло, отправщик свободен
+  const real = shop.db.query;
+  const orig = real.bind(shop.db);
+  let armed = true;
+  // Выборка очереди вернула «пусто», и сразу после этого (проход ещё не закончен) появляется строка и приходит сигнал kick():
+  // раньше такой сигнал отбрасывался, и сообщение ждало следующего тика таймера (30 секунд)
+  shop.db.query = async (sql, params) => {
+    const r = await orig(sql, params);
+    if (armed && /UPDATE webshop\.outbox SET attempts/.test(sql) && r.rows.length === 0) {
+      armed = false;
+      await shop.services.notifier.enqueueCustomerStatus({ query: orig }, orderId, 'packed');
+      shop.services.notifier.kick();
+      await new Promise((x) => setImmediate(x));
+      await new Promise((x) => setImmediate(x));
+    }
+    return r;
+  };
+  try {
+    shop.services.notifier.kick();
+    const [text] = await waitFor(async () => { const m = msgsTo(tgId); return m.length ? m : null; }, 2500);
+    assert.match(text, /Собран/);
+  } finally { shop.db.query = real; }
+});
+
 test('без привязанного Telegram и с выключенными уведомлениями ничего не ставится в очередь', async () => {
   const guest = await placeOrder(shop, pid, { phone: '79160000702' });
   await setStatus(guest.orderId, 'confirmed');

@@ -4,7 +4,8 @@ const { RESERVING, queueFilter } = require('./catalog');
 const { quote, cityAllowed, PAY_METHODS } = require('./delivery');
 const { normalizePhone, isEmail, str } = require('./util');
 const { computeDiscount } = require('./loyalty');
-const { isExtPid } = require('./ext');
+const { isExtPid, isOwnPid } = require('./ext');
+const { freeMap } = require('./own');
 
 class OrderError extends Error {}
 
@@ -94,7 +95,8 @@ async function createOrder(db, { form, priced, catalog, idemKey, vid, sid, sourc
       const dup = await c.query('SELECT number, token FROM webshop.orders WHERE idem_key = $1', [idemKey]);
       if (dup.rows[0]) return { number: dup.rows[0].number, token: dup.rows[0].token, repeated: true };
     }
-    const stockLines = lines.filter((l) => !isExtPid(l.pid)); // со склада проверяем остаток; товары партнёра проверены выше
+    // Со склада проверяем остаток по базе склада; товары партнёра проверены выше; свои товары - по остатку сайта (поступило минус проданное)
+    const stockLines = lines.filter((l) => !isExtPid(l.pid) && !isOwnPid(l.pid));
     const ids = stockLines.map((l) => l.pid);
     const avail = await c.query(
       `SELECT p.id,
@@ -103,7 +105,11 @@ async function createOrder(db, { form, priced, catalog, idemKey, vid, sid, sourc
                            WHERE oi.product_id = p.id AND o.status = ANY($2) ${queueFilter(catalog.queueOk !== false)}), 0)::int AS free
          FROM products p WHERE p.id = ANY($1)`, [ids, RESERVING]);
     const free = new Map(avail.rows.map((r) => [r.id, r.free]));
-    const short = stockLines.filter((l) => (free.get(l.pid) ?? 0) < l.qty);
+    const ownLines = lines.filter((l) => isOwnPid(l.pid));
+    const ownFree = ownLines.length ? await freeMap(c, ownLines.map((l) => l.pid)) : new Map();
+    const need = new Map();
+    for (const l of ownLines) need.set(l.pid, (need.get(l.pid) || 0) + l.qty);
+    const short = [...stockLines.filter((l) => (free.get(l.pid) ?? 0) < l.qty), ...ownLines.filter((l) => (ownFree.get(l.pid) ?? 0) < (need.get(l.pid) || 0))];
     if (short.length) {
       throw new OrderError('Пока вы оформляли заказ, часть товаров разобрали: ' +
         short.map((l) => `${l.model.title}, размер ${l.size.label}`).join('; ') + '. Обновите корзину');

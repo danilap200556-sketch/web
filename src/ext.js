@@ -9,8 +9,12 @@ const { slugify } = require('./util');
 const EXT_BASE = 1_000_000_000;
 const EXT_STOCK = 5; // сколько штук можно положить в корзину: у партнёра известно только «есть» или «нет»
 
+// Свои товары (добавлены вручную в админке) начинаются с OWN_BASE: и номер размера, и номер фото = OWN_BASE + номер строки.
+// Всё влезает в целое число базы (до 2,1 млрд): партнёрам остаётся полмиллиарда строк, своим - больше полумиллиарда.
+const OWN_BASE = 1_500_000_000;
 const extPid = (id) => EXT_BASE + id;
-const isExtPid = (pid) => Number(pid) >= EXT_BASE;
+const isExtPid = (pid) => Number(pid) >= EXT_BASE && Number(pid) < OWN_BASE;
+const isOwnPid = (pid) => Number(pid) >= OWN_BASE;
 const extPhoto = (id, i) => -(id * 10 + i);
 const parseExtPhoto = (photoId) => { const n = -Number(photoId); return { id: Math.floor(n / 10), idx: n % 10 }; };
 
@@ -115,4 +119,4 @@ function buildExtModels(rows, { markupPct = 0, baseUrl = '', showOldPrice = fals
   return out;
 }
 
-module.exports = { EXT_BASE, EXT_STOCK, extPid, isExtPid, extPhoto, parseExtPhoto, detectBrand, typeOfTitle, typeOfRow, buildExtModels, markup, priceOf };
+module.exports = { EXT_BASE, OWN_BASE, EXT_STOCK, extPid, isExtPid, isOwnPid, extPhoto, parseExtPhoto, detectBrand, typeOfTitle, typeOfRow, buildExtModels, markup, priceOf };

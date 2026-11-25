@@ -488,12 +488,12 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner, pa
             <li>${icon('shield')}<span><b>Оригинал</b>, чек и документы при получении</span></li>` : html`<li>${icon('store')}<span><b>Самовывоз</b> и примерка в магазине</span></li>
             <li>${icon('shield')}<span><b>Оригинал</b>, проверяем каждую пару</span></li>`}
           </ul>
-          <details class="acc" ${descr ? raw('open') : ''}><summary>Описание</summary><div class="acc__body">${descr ? descr.split(/\n{2,}/).map((p) => html`<p>${p}</p>`) : html`<p>${m.fullName}. Артикул: ${m.key}.</p>`}</div></details>
+          <details class="acc" ${descr ? raw('open') : ''}><summary>Описание</summary><div class="acc__body">${descr ? descr.split(/\n{2,}/).map((p) => html`<p>${p}</p>`) : html`<p>${m.fullName}.${m.own ? (m.own.article ? ` Артикул: ${m.own.article}.` : '') : ` Артикул: ${m.key}.`}</p>`}</div></details>
           ${isExt ? '' : guideBlock({ brand: m.brand, dept: m.dept, sizes: m.sizes.filter((s) => s.qty > 0).map((s) => s.size) })}
           <details class="acc"><summary>Доставка и оплата</summary><div class="acc__body">
             ${d.methods.filter((x) => x.active).map((x) => html`<p><b>${x.title}</b>${x.eta ? ' · ' + x.eta : ''}${x.price ? ' · от ' + rub(x.price) : ' · бесплатно'}</p>`)}
             <p><a href="/delivery">Подробнее о доставке и возврате</a></p></div></details>
-          <p class="muted buy__sku">${isExt ? 'Поставщик: Sergeev Electronics' : html`Артикул: ${m.key}`}</p>
+          <p class="muted buy__sku">${isExt ? `Поставщик: ${(partner.get && partner.get(m.ext.source) ? partner.get(m.ext.source).name : 'Sergeev Electronics')}` : m.own ? (m.own.article ? html`Артикул: ${m.own.article}` : '') : html`Артикул: ${m.key}`}</p>
         </div>
       </div>
       ${related.length ? html`<section class="block block--tight"><div class="block__head"><div><p class="eyebrow">Вам может понравиться</p><h2>Похожие модели</h2></div></div>

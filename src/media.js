@@ -8,6 +8,7 @@
 // накладывает его на цвет карточки режимом multiply, и фото сливается с карточкой).
 const sharp = require('sharp');
 const { studio } = require('./photofix');
+const { OWN_BASE } = require('./ext');
 
 // Версия вида фото: входит в ключи кэша и в адрес картинки (?v=), чтобы браузеры не держали старое фото после смены обработки
 const LOOK = 2;
@@ -76,6 +77,11 @@ function createMedia(db, { partner, studio: useStudio = true } = {}) {
   const infoCache = new Map(); // id фото -> { gain, clean }
 
   async function load(id) {
+    // Фото своих товаров лежат в базе сайта (webshop.own_photos), номер = OWN_BASE + id строки; фото склада - в product_photos
+    if (id >= OWN_BASE) {
+      const own = await db.query('SELECT data FROM webshop.own_photos WHERE id = $1', [id - OWN_BASE]);
+      return own.rows[0] ? own.rows[0].data : null;
+    }
     const { rows } = await db.query('SELECT data FROM product_photos WHERE id = $1', [id]);
     return rows[0] ? rows[0].data : null;
   }

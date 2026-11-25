@@ -20,7 +20,7 @@ function priceNotice(catalog) {
   const why = { missing: 'в базе нет таблицы site_prices: запустите новую версию приложения «Склад» один раз', denied: 'у пользователя сайта нет права читать site_prices: выполните grants.sql', error: 'не удалось прочитать таблицу site_prices (см. журнал сайта)' }[s.status];
   return html`<p class="hint">Цены сайта не подключены: ${why}. Пока на сайте цены склада.</p>`;
 }
-const REASON = { manual: 'Скрыта вручную', no_photo: 'Нет фото', no_price: 'Нет цены', note_only: 'Только размеры с пометками (без коробки, один кроссовок...)' };
+const REASON = { manual: 'Скрыта вручную', own_off: 'Скрыт в разделе «Свои товары»', no_photo: 'Нет фото', no_price: 'Нет цены', note_only: 'Только размеры с пометками (без коробки, один кроссовок...)' };
 
 module.exports = function mount({ db, cfg, auth, render, router, catalog, settings, heroMedia, logo }) {
   router.get('/showcase', auth.require('showcase'), async (req, res, next) => {
@@ -57,6 +57,7 @@ module.exports = function mount({ db, cfg, auth, render, router, catalog, settin
         } catch (e) { /* таблицы нет или нет права чтения: поля пустые, сообщение уже есть выше */ }
       }
       const priceForm = (m) => {
+        if (m.own) return html`<p class="mprice__own"><a class="link" href="/admin/own/${m.own.id}">Свой товар: цена, размеры и остатки правятся в «Свои товары»</a></p>`;
         if (!canPrice || m.ext) return '';
         const sp = sitePrice.get(m.key) || {};
         return html`<details class="mprice"><summary>Цена, акция и описание</summary>
@@ -286,6 +287,7 @@ module.exports = function mount({ db, cfg, auth, render, router, catalog, settin
       const done = (type, text) => { res.flash(type, text); res.redirect(back.startsWith('/admin/showcase') ? back : '/admin/showcase'); };
       await catalog.ensure();
       const m = catalog.byKey && catalog.byKey.get(key);
+      if (m && m.own) return done('err', 'Свой товар правится в разделе «Свои товары»');
       if (!m || m.ext) return done('err', 'Модель не найдена (товары партнёра правятся в разделе «Электроника»)');
       const price = num2(req.body.price);
       const sale = num2(req.body.sale);

@@ -4,7 +4,7 @@
 // паузой (30 с, 2 мин, 10 мин, 30 мин, дальше раз в час, всего 14 попыток, около суток). Сбой уведомления заказ не задерживает и не отменяет.
 const { rub, formatPhone } = require('./util');
 const { PAY_METHODS } = require('./delivery');
-const { EXT_BASE } = require('./ext');
+const { isExtPid } = require('./ext');
 const { STATUSES } = require('./orders');
 
 const BACKOFF_SEC = [30, 120, 600, 1800, 3600];
@@ -61,7 +61,7 @@ function createNotifier({ db, cfg, bot = null, log = console }) {
     lines.push(`Оплата: ${(PAY_METHODS[o.pay_method] || {}).title || o.pay_method}`);
     if (Number(o.discount) > 0) lines.push(`${o.discount_note}: −${rub(Number(o.discount))}`);
     lines.push('', 'Состав:');
-    for (const i of items) lines.push(`• ${i.title}${i.size ? ' · ' + i.size : ''} × ${i.qty} - ${rub(Number(i.price) * i.qty)}${Number(i.product_id) >= EXT_BASE ? ' [товар партнёра]' : ''}`);
+    for (const i of items) lines.push(`• ${i.title}${i.size ? ' · ' + i.size : ''} × ${i.qty} - ${rub(Number(i.price) * i.qty)}${isExtPid(i.product_id) ? ' [товар партнёра]' : ''}`);
     if (o.comment) lines.push('', `Комментарий: ${o.comment}`);
     if (siteUrl) lines.push('', `${siteUrl}/admin/orders/${o.id}`);
     return lines.join('\n');

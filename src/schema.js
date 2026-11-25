@@ -289,6 +289,42 @@ const SCHEMA = [
    )`,
   // Своё описание модели из админки («Витрина и каталог»): пусто - описание из склада
   `ALTER TABLE webshop.model_flags ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''`,
+  // Свои товары: добавляются вручную в админке («Свои товары»). Остаток размера = поступило (received) минус проданное в заказах,
+  // которые не отменены и не возвращены: так отмена и возврат сами возвращают остаток, а склад приложения «Склад» не задействован.
+  `CREATE TABLE IF NOT EXISTS webshop.own_products (
+     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+     article TEXT NOT NULL DEFAULT '',
+     name TEXT NOT NULL,
+     vendor TEXT NOT NULL DEFAULT '',
+     type TEXT NOT NULL DEFAULT '',
+     dept TEXT NOT NULL CHECK (dept IN ('shoes', 'clothes', 'accessories', 'electronics')),
+     description TEXT NOT NULL DEFAULT '',
+     price NUMERIC(12,2) NOT NULL CHECK (price > 0),
+     sale_price NUMERIC(12,2) CHECK (sale_price IS NULL OR sale_price > 0),
+     sale_from DATE,
+     sale_to DATE,
+     active BOOLEAN NOT NULL DEFAULT TRUE,
+     created_by TEXT NOT NULL DEFAULT '',
+     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+   )`,
+  `CREATE TABLE IF NOT EXISTS webshop.own_sizes (
+     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+     product_id INTEGER NOT NULL REFERENCES webshop.own_products(id) ON DELETE CASCADE,
+     size TEXT NOT NULL DEFAULT '',
+     received INTEGER NOT NULL DEFAULT 0 CHECK (received >= 0),
+     sort INTEGER NOT NULL DEFAULT 0,
+     UNIQUE (product_id, size)
+   )`,
+  `CREATE TABLE IF NOT EXISTS webshop.own_photos (
+     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+     product_id INTEGER NOT NULL REFERENCES webshop.own_products(id) ON DELETE CASCADE,
+     position INTEGER NOT NULL DEFAULT 0,
+     data BYTEA NOT NULL,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+   )`,
+  `CREATE INDEX IF NOT EXISTS own_sizes_product_idx ON webshop.own_sizes (product_id)`,
+  `CREATE INDEX IF NOT EXISTS own_photos_product_idx ON webshop.own_photos (product_id, position, id)`,
 ];
 
 module.exports = { SCHEMA };

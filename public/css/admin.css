@@ -412,3 +412,19 @@ a.stat:hover { border-color: var(--line-strong); color: inherit; }
 .mprice__f textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--line, #e5dccf); border-radius: 10px; font: inherit; }
 .mprice__foot { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 @media (max-width: 800px) { .mprice { margin-left: 0; } .mprice__f { grid-template-columns: 1fr 1fr; } }
+
+/* Свои товары */
+.sizechip { display: inline-flex; align-items: baseline; gap: 6px; margin: 2px 6px 2px 0; padding: 2px 9px; border-radius: 999px; background: #eef6ee; color: #1d5b2a; font-size: 13px; white-space: nowrap; }
+.sizechip b { font-weight: 700; }
+.sizechip.is-off { background: #f1f0ec; color: #8a8a8f; }
+.ownform h2 { margin-top: 20px; }
+.ownform h2:first-child { margin-top: 0; }
+.sizerows .pricein { width: 120px; max-width: 100%; }
+.ownphotos { display: flex; flex-wrap: wrap; gap: 14px; margin: 12px 0 16px; }
+.ownphoto { margin: 0; width: 160px; display: grid; gap: 8px; }
+.ownphoto img { width: 160px; height: 160px; object-fit: contain; border-radius: 12px; background: #fff; border: 1px solid var(--line, #e5e5e5); }
+.ownphoto figcaption { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ownphoto figcaption form { margin: 0; }
+.dangerzone { margin-top: 16px; }
+.dangerzone summary { cursor: pointer; color: var(--muted, #6b6b70); }
+.mprice__own { margin: 6px 0 0; }

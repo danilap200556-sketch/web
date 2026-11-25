@@ -20,6 +20,7 @@ const ACCESS = {
   showcase: ['owner', 'editor'],
   pages: ['owner', 'editor'],
   electronics: ['owner', 'editor'],
+  own: ['owner', 'editor'],           // свои товары: добавление, цены, остатки, фото
   catprices: ['owner'],               // цены и акции моделей склада: только владелец
   eprices: ['owner'],                 // закупочные цены: только владелец
   delivery: ['owner'],

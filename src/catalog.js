@@ -4,6 +4,7 @@
 // (заказ оформлен, админ скрыл модель).
 const { buildModels, DEPARTMENTS } = require('./model');
 const { buildExtModels } = require('./ext');
+const { loadOwn, buildOwnModels } = require('./own');
 
 const PAGE_SIZE = 24;
 // Заказы в этих статусах держат товар в резерве: из остатка склада вычитаем, пока склад не списал его сам
@@ -142,7 +143,7 @@ class Catalog {
 
   async load() {
     const { db } = this;
-    const [prod, photos, reserved, flags, cfg, sitePrices, extRows] = await Promise.all([
+    const [prod, photos, reserved, flags, cfg, sitePrices, extRows, ownRows] = await Promise.all([
       db.query(`SELECT p.id, p.sku, p.name, p.description, p.price::float8 AS price, COALESCE(p.market_vendor, '') AS vendor,
                        COALESCE(p.market_category_name, '') AS category, p.created_at, GREATEST(COALESCE(st.q, 0), 0)::int AS qty
                   FROM products p
@@ -153,6 +154,7 @@ class Catalog {
       this.settings.get(),
       this.loadSitePrices(),
       this.partner ? this.partner.rows().catch((e) => { console.warn(`[partner] каталог электроники недоступен: ${e.message}`); return []; }) : [],
+      loadOwn(this.db).catch((e) => { console.warn(`[own] свои товары недоступны: ${e.message}`); return []; }),
     ]);
     const photoMap = new Map();
     for (const r of photos.rows) {
@@ -165,11 +167,12 @@ class Catalog {
 
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: this.tz }).format(new Date()); // YYYY-MM-DD в часовом поясе магазина
     const all = [...buildModels(rows, { reserved: resMap, sitePrices, today, showNoteSizes: Boolean(cfg.showNoteSizes) }),
+      ...buildOwnModels(ownRows, { today }),
       ...buildExtModels(extRows, { markupPct: Number((cfg.electronics || {}).markupPct) || 0, showOldPrice: Boolean((cfg.electronics || {}).showOldPrice), baseUrl: this.partner ? this.partner.bases : '' })];
     const models = [];
     for (const m of all) {
       const f = flagMap.get(m.key);
-      m.hideReason = f && f.hidden ? 'manual' : '';
+      m.hideReason = f && f.hidden ? 'manual' : (m.hiddenOwn ? 'own_off' : '');
       m.featured = !!(f && f.featured);
       m.badge = (f && f.badge) || '';
       m.descriptionOverride = (f && f.description) || '';

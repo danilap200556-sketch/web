@@ -219,6 +219,7 @@ module.exports = function mount(app, services) {
   require('./showcase')(ctx);
   require('./pages')(ctx);
   require('./electronics')(ctx);
+  require('./own')(ctx);
   require('./manage')(ctx);
 
   app.use('/admin', router);

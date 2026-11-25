@@ -32,6 +32,19 @@ test.describe('подвал как у больших магазинов, Янд�
     assert.doesNotMatch(cart, /class="where"/, 'в корзине карты нет');
   });
 
+  test('политика конфиденциальности всегда есть в нижней строке подвала и в уведомлении о cookie', async () => {
+    const home = (await client(shop.base).get('/')).text;
+    assert.match(home, /class="foot__copy">[\s\S]*<a href="\/privacy">Политика конфиденциальности<\/a>/, 'без своей страницы ссылка ведёт на /privacy');
+    assert.match(home, /<div class="cookie"[\s\S]*<a href="\/privacy">Подробнее<\/a>/);
+    const page = await client(shop.base).get('/privacy');
+    assert.equal(page.status, 200, 'ссылка не ведёт в пустоту');
+    assert.match(page.text, /Политика в отношении обработки персональных данных/);
+    for (const h of ['1. Общие положения', '2. Основные понятия', '3. Какие данные мы обрабатываем', '4. Цели и основания обработки', '5. Как мы обрабатываем и защищаем данные',
+      '6. Кому мы передаём данные', '7. Права пользователя', '8. Cookie и аналитика', '9. Заключительные положения']) assert.ok(page.text.includes(h), h);
+    assert.match(page.text, /Telegram/);
+    assert.match(page.text, /ИП Усатов Егор Николаевич, ИНН 616614137900/, 'оператор из реквизитов магазина');
+  });
+
   test('админка: соцсети, значки, карта по координатам, «только на главной»; чужие ссылки не принимаются', async () => {
     const base = { _csrf: owner.csrf, map_title: 'Где мы', map_zoom: '15', map_show: 'home', since: '2021', badges: ['mir', 'sbp', 'ems'] };
     let r = await owner.c.post('/admin/settings/footer', { ...base, soc_vk: 'https://evil.example/vk.com', map_query: '55.7539, 37.6208' });

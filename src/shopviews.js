@@ -389,13 +389,13 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
         <p class="foot__copy">
           <span>Интернет-магазин © ${s.shopName} ${years}</span>
           ${fp.terms ? html`<a href="/info/terms">Пользовательское соглашение</a>` : ''}
-          ${fp.privacy ? html`<a href="/info/privacy">Политика конфиденциальности</a>` : ''}
+          <a href="${fp.privacy ? '/info/privacy' : '/privacy'}">Политика конфиденциальности</a>
         </p>
       </div>
     </div>
   </footer>
   <div class="cookie" id="cookie" hidden>
-    <p>Мы используем cookie: чтобы работала корзина и считалась статистика посещений.${mapFor(s) ? ' Карта на сайте - сервис Яндекса, у него свои cookie.' : ''}${ctx.footerPages && ctx.footerPages.privacy ? html` <a href="/info/privacy">Подробнее</a>` : ''}</p>
+    <p>Мы используем cookie: чтобы работала корзина и считалась статистика посещений.${mapFor(s) ? ' Карта на сайте - сервис Яндекса, у него свои cookie.' : ''}<a href="${ctx.footerPages && ctx.footerPages.privacy ? '/info/privacy' : '/privacy'}">Подробнее</a></p>
     <button class="btn btn--sm" type="button" data-cookie-ok>Понятно</button>
   </div>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>

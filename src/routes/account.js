@@ -414,7 +414,7 @@ module.exports = function mount(app, services, shopCtx, send) {
       const r = (s.payment && s.payment.requisites) || {};
       const legal = s.legal || {};
       const operator = [sellerName(r.name), r.inn && `ИНН ${r.inn}`, legal.ogrnip && `ОГРНИП ${legal.ogrnip}`, legal.address].filter(Boolean).join(', ');
-      send(req, res, { title: 'Политика обработки персональных данных', body: views.privacyPage({ shopName: s.shopName, email: s.email, operator }) });
+      send(req, res, { title: 'Политика в отношении обработки персональных данных', body: views.privacyPage({ shopName: s.shopName, email: s.email, phone: s.phone, operator, siteUrl: req.ctx.baseUrl }) });
     } catch (e) { next(e); }
   });
 

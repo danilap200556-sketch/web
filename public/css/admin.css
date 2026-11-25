@@ -402,3 +402,13 @@ a.stat:hover { border-color: var(--line-strong); color: inherit; }
 .pricein { width: 130px; height: 36px; padding: 0 10px; border: 1px solid var(--line, #e5dccf); border-radius: 8px; background: var(--surface, #fff); font: inherit; text-align: right; }
 .pricein--s { width: 80px; }
 .is-off { opacity: .6; }
+
+/* Цена, акция и описание модели в «Витрине и каталоге» */
+.mitem { display: grid; }
+.mprice { margin: -4px 0 10px 70px; padding: 0 14px; border: 1px dashed var(--line, #e5dccf); border-radius: 12px; background: var(--surface, #fff); }
+.mprice > summary { cursor: pointer; padding: 10px 0; font-weight: 600; font-size: 14px; }
+.mprice__f { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 14px; padding: 4px 0 14px; }
+.mprice__f .field--wide, .mprice__foot { grid-column: 1 / -1; }
+.mprice__f textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--line, #e5dccf); border-radius: 10px; font: inherit; }
+.mprice__foot { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+@media (max-width: 800px) { .mprice { margin-left: 0; } .mprice__f { grid-template-columns: 1fr 1fr; } }

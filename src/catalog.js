@@ -149,7 +149,7 @@ class Catalog {
                   LEFT JOIN (SELECT product_id, SUM(quantity)::int AS q FROM stock GROUP BY product_id) st ON st.product_id = p.id`),
       db.query('SELECT product_id, id FROM product_photos ORDER BY product_id, position, id'),
       this.loadReserved(),
-      db.query('SELECT model_key, hidden, featured, badge FROM webshop.model_flags'),
+      db.query('SELECT model_key, hidden, featured, badge, description FROM webshop.model_flags'),
       this.settings.get(),
       this.loadSitePrices(),
       this.partner ? this.partner.rows().catch((e) => { console.warn(`[partner] каталог электроники недоступен: ${e.message}`); return []; }) : [],
@@ -172,6 +172,8 @@ class Catalog {
       m.hideReason = f && f.hidden ? 'manual' : '';
       m.featured = !!(f && f.featured);
       m.badge = (f && f.badge) || '';
+      m.descriptionOverride = (f && f.description) || '';
+      if (m.descriptionOverride) m.description = m.descriptionOverride;
       if (!m.hideReason && cfg.requirePhoto && !m.photos.length) m.hideReason = 'no_photo';
       if (!m.hideReason && m.noteOnly) m.hideReason = 'note_only'; // все размеры с пометками в артикуле (без коробки, один кроссовок...)
       if (!m.hideReason && !m.price) m.hideReason = 'no_price'; // без цены продавать нельзя

@@ -287,6 +287,8 @@ const SCHEMA = [
      updated_by TEXT NOT NULL DEFAULT '',
      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
    )`,
+  // Своё описание модели из админки («Витрина и каталог»): пусто - описание из склада
+  `ALTER TABLE webshop.model_flags ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''`,
 ];
 
 module.exports = { SCHEMA };

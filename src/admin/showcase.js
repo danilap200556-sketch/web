@@ -9,6 +9,7 @@ const { SEASON_ICON, photoUrl } = require('../shopviews');
 const { norm } = require('../catalog');
 const { pager } = require('./layout');
 const { logoUrls } = require('../logo');
+const { can } = require('./auth');
 
 const PAGE = 20;
 
@@ -45,6 +46,32 @@ module.exports = function mount({ db, cfg, auth, render, router, catalog, settin
       const st = catalog.stats();
       const back = `/admin/showcase?${new URLSearchParams({ ...(q ? { q } : {}), ...(show ? { show } : {}), ...(page > 1 ? { page } : {}) })}`;
       const keep = (o) => { const u = new URLSearchParams(); for (const [k, v] of Object.entries({ q, show, ...o })) if (v) u.set(k, v); return u.toString(); };
+
+      // Цены, заданные для моделей этой страницы (для полей формы владельца)
+      const canPrice = can(req.admin.user.role, 'catprices');
+      const sitePrice = new Map();
+      if (canPrice && pageList.length) {
+        try {
+          const sp = await db.query(`SELECT model_key, price::float8 AS price, sale_price::float8 AS sale, to_char(sale_from, 'YYYY-MM-DD') AS f, to_char(sale_to, 'YYYY-MM-DD') AS t FROM site_prices WHERE model_key = ANY($1)`, [pageList.map((m) => m.key)]);
+          for (const r of sp.rows) sitePrice.set(r.model_key, r);
+        } catch (e) { /* таблицы нет или нет права чтения: поля пустые, сообщение уже есть выше */ }
+      }
+      const priceForm = (m) => {
+        if (!canPrice || m.ext) return '';
+        const sp = sitePrice.get(m.key) || {};
+        return html`<details class="mprice"><summary>Цена, акция и описание</summary>
+          <form class="mprice__f" method="post" action="/admin/showcase/price">${req.adminCsrf}
+            <input type="hidden" name="key" value="${m.key}"><input type="hidden" name="back" value="${back}">
+            <label class="field">Цена сайта, ₽<input name="price" value="${sp.price ?? ''}" inputmode="decimal" placeholder="как на складе"></label>
+            <label class="field">Цена со скидкой, ₽<input name="sale" value="${sp.sale ?? ''}" inputmode="decimal" placeholder="нет акции"></label>
+            <label class="field">Скидка с<input type="date" name="from" value="${sp.f || ''}"></label>
+            <label class="field">Скидка по<input type="date" name="to" value="${sp.t || ''}"></label>
+            <label class="field field--wide">Описание на сайте <span class="muted">(пусто - описание из склада; абзацы разделяйте пустой строкой)</span>
+              <textarea name="description" rows="4" maxlength="4000">${m.descriptionOverride || ''}</textarea></label>
+            <div class="mprice__foot"><button class="btn btn--primary btn--sm" type="submit">Сохранить цену и описание</button>
+              <span class="muted">Пустые цена и скидка возвращают цену склада. Цены пишутся в общую таблицу: их видно и во вкладке «Цены сайта» в приложении.</span></div>
+          </form></details>`;
+      };
 
       const hm = s.heroMedia && s.heroMedia.id ? s.heroMedia : null;
       const lu = logoUrls(s);
@@ -132,7 +159,7 @@ module.exports = function mount({ db, cfg, auth, render, router, catalog, settin
         </form>
         <p class="muted">Найдено: ${num(list.length)}</p>
         <div class="mlist">
-          ${pageList.map((m) => html`<form class="mrow${m.hidden ? ' is-hidden' : ''}" method="post" action="/admin/showcase/model">${req.adminCsrf}
+          ${pageList.map((m) => html`<div class="mitem"><form class="mrow${m.hidden ? ' is-hidden' : ''}" method="post" action="/admin/showcase/model">${req.adminCsrf}
             <input type="hidden" name="key" value="${m.key}"><input type="hidden" name="back" value="${back}">
             <span class="mrow__img">${m.cover ? html`<img src="${photoUrl(m.cover, 360)}" alt="" width="56" height="56" loading="lazy">` : html`<span class="toplist__ph"></span>`}</span>
             <div class="mrow__t"><b>${m.title}${m.colorway ? ' «' + m.colorway + '»' : ''}</b>
@@ -142,7 +169,7 @@ module.exports = function mount({ db, cfg, auth, render, router, catalog, settin
             <label class="check"><input type="checkbox" name="hidden" ${m.hideReason === 'manual' ? 'checked' : ''}><span>Скрыть</span></label>
             <input class="badge-in" name="badge" value="${m.badge}" maxlength="24" placeholder="Ярлык, например: Хит" aria-label="Ярлык">
             <button class="btn btn--sm" type="submit">Сохранить</button>
-          </form>`)}
+          </form>${priceForm(m)}</div>`)}
         </div>
         ${pager('/admin/showcase?' + keep({}), page, pages)}
       </section>`;
@@ -238,6 +265,59 @@ module.exports = function mount({ db, cfg, auth, render, router, catalog, settin
         res.flash('ok', 'Сохранено');
       }
       res.redirect(back.startsWith('/admin/showcase') ? back : '/admin/showcase');
+    } catch (e) { next(e); }
+  });
+
+  // ---------- Цена, акция и описание модели (владелец) ----------
+  // Цена и акция пишутся в site_prices: ту же таблицу ведёт вкладка «Цены сайта» в приложении «Склад», поэтому правки видны и там.
+  // Описание хранится на стороне сайта (model_flags.description): таблицы склада сайт не меняет.
+  const num2 = (v) => {
+    const t = String(v ?? '').replace(/[\s ]/g, '').replace(',', '.');
+    if (t === '') return { value: null };
+    if (!/^\d+(\.\d{1,2})?$/.test(t) || Number(t) > 100_000_000) return { error: true };
+    return { value: Number(t) };
+  };
+  const dateOk = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`)) && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v;
+
+  router.post('/showcase/price', auth.require('catprices'), async (req, res, next) => {
+    try {
+      const key = str(req.body.key, 100);
+      const back = String(req.body.back || '');
+      const done = (type, text) => { res.flash(type, text); res.redirect(back.startsWith('/admin/showcase') ? back : '/admin/showcase'); };
+      await catalog.ensure();
+      const m = catalog.byKey && catalog.byKey.get(key);
+      if (!m || m.ext) return done('err', 'Модель не найдена (товары партнёра правятся в разделе «Электроника»)');
+      const price = num2(req.body.price);
+      const sale = num2(req.body.sale);
+      const from = String(req.body.from || '').trim();
+      const to = String(req.body.to || '').trim();
+      const description = String(req.body.description || '').replace(/\r/g, '').trim().slice(0, 4000);
+      if (price.error) return done('err', 'Цена: неверное число');
+      if (sale.error) return done('err', 'Цена со скидкой: неверное число');
+      if (sale.value !== null && price.value === null) return done('err', 'Укажите цену, к которой относится скидка');
+      if (sale.value !== null && !(sale.value < price.value)) return done('err', 'Цена со скидкой должна быть меньше обычной');
+      if ((from && !dateOk(from)) || (to && !dateOk(to)) || (from && to && from > to)) return done('err', 'Даты скидки: формат ГГГГ-ММ-ДД, «с» не позже «по»');
+      const who = `сайт: ${String(req.admin.user.name || '').slice(0, 50)}`;
+      let note = '';
+      try {
+        if (price.value === null) await db.query('DELETE FROM site_prices WHERE model_key = $1', [key]);
+        else {
+          await db.query(
+            `INSERT INTO site_prices (model_key, price, sale_price, sale_from, sale_to, updated_by, updated_at) VALUES ($1, $2, $3, $4, $5, $6, NOW())
+             ON CONFLICT (model_key) DO UPDATE SET price = EXCLUDED.price, sale_price = EXCLUDED.sale_price, sale_from = EXCLUDED.sale_from, sale_to = EXCLUDED.sale_to,
+               updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
+            [key, price.value, sale.value, sale.value === null ? null : (from || null), sale.value === null ? null : (to || null), who]);
+        }
+      } catch (e) {
+        if (e.code === '42P01') note = 'Цена не сохранена: таблицы site_prices нет, запустите новую версию приложения «Склад» один раз.';
+        else if (e.code === '42501') note = 'Цена не сохранена: у пользователя сайта нет права записи в site_prices. Выполните в grants.sql строку GRANT INSERT, UPDATE, DELETE ON site_prices TO shop_user.';
+        else throw e;
+      }
+      await db.query(
+        `INSERT INTO webshop.model_flags (model_key, description, updated_at) VALUES ($1, $2, NOW())
+         ON CONFLICT (model_key) DO UPDATE SET description = EXCLUDED.description, updated_at = NOW()`, [key, description]);
+      catalog.invalidate();
+      done(note ? 'err' : 'ok', note ? `${note} Описание сохранено.` : 'Сохранено');
     } catch (e) { next(e); }
   });
 };

@@ -40,17 +40,34 @@ const TYPES = [
 ];
 const typeOfTitle = (title) => { for (const [t, re] of TYPES) if (re.test(title)) return t; return 'Другая электроника'; };
 
-const markup = (price, pct) => (pct > 0 ? Math.ceil((Number(price) * (1 + pct / 100)) / 10) * 10 : Math.round(Number(price)));
+// Наценка в процентах, округление вверх до 10 ₽. Считаем в «сотых рубля» с округлением, чтобы 100 000 ₽ + 10% не давали 110 010 из-за дробной ошибки.
+const markup = (price, pct) => {
+  if (!(pct > 0)) return Math.round(Number(price));
+  const x = Math.round(Number(price) * (100 + Number(pct)) * 100) / 100;   // цена в рублях, умноженная на 100
+  return Math.ceil(x / 1000 - 1e-9) * 10;
+};
 
-// rows: строки webshop.ext_products. opts.markupPct - наценка к цене партнёра в процентах (0 - цена как у партнёра),
+const has = (v) => v !== null && v !== undefined && v !== '';
+// Цена на сайте: ручная цена главнее всего; иначе закупка (вручную или цена партнёра) плюс наценка товара (иначе общая).
+// Поля buy_price, markup_pct, manual_price приходят из webshop.ext_prices (строки или числа; пусто - не задано).
+function priceOf(r, globalPct = 0) {
+  if (Number(r.manual_price) > 0) return Math.round(Number(r.manual_price));
+  const base = has(r.buy_price) ? Number(r.buy_price) : Number(r.price);
+  const pct = has(r.markup_pct) ? Number(r.markup_pct) : Number(globalPct) || 0;
+  return markup(base, pct);
+}
+
+// rows: строки webshop.ext_products (с полями ручных цен из webshop.ext_prices). opts.markupPct - наценка к цене партнёра в процентах (0 - цена как у партнёра),
 // opts.showOldPrice - показывать ли зачёркнутую цену партнёра как скидку.
 function buildExtModels(rows, { markupPct = 0, baseUrl = '', showOldPrice = false } = {}) {
   const out = [];
   for (const r of rows) {
-    const price = markup(r.price, markupPct);
+    const price = priceOf(r, markupPct);
     if (!(price > 0)) continue;
+    const pct = has(r.markup_pct) ? Number(r.markup_pct) : markupPct;
+    const ownPrice = Number(r.manual_price) > 0 || has(r.buy_price);   // цена задана вручную: зачёркнутую цену партнёра к ней не подбираем
     // Зачёркнутая цена партнёра показывается как скидка только если владелец это включил в админке: настоящая ли это скидка, мы не знаем
-    const oldPrice = showOldPrice && r.old_price && Number(r.old_price) > Number(r.price) ? markup(r.old_price, markupPct) : 0;
+    const oldPrice = showOldPrice && !ownPrice && r.old_price && Number(r.old_price) > Number(r.price) ? markup(r.old_price, pct) : 0;
     const discount = oldPrice ? Math.max(1, Math.min(99, Math.round((1 - price / oldPrice) * 100))) : 0;
     const images = Array.isArray(r.images) ? r.images.slice(0, 8) : [];
     const photos = images.map((_, i) => extPhoto(r.id, i));
@@ -88,4 +105,4 @@ function buildExtModels(rows, { markupPct = 0, baseUrl = '', showOldPrice = fals
   return out;
 }
 
-module.exports = { EXT_BASE, EXT_STOCK, extPid, isExtPid, extPhoto, parseExtPhoto, detectBrand, typeOfTitle, buildExtModels, markup };
+module.exports = { EXT_BASE, EXT_STOCK, extPid, isExtPid, extPhoto, parseExtPhoto, detectBrand, typeOfTitle, buildExtModels, markup, priceOf };

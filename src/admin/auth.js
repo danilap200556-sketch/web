@@ -20,6 +20,7 @@ const ACCESS = {
   showcase: ['owner', 'editor'],
   pages: ['owner', 'editor'],
   electronics: ['owner', 'editor'],
+  eprices: ['owner'],                 // закупочные цены: только владелец
   delivery: ['owner'],
   users: ['owner'],
   settings: ['owner'],

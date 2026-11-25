@@ -397,3 +397,8 @@ a.stat:hover { border-color: var(--line-strong); color: inherit; }
 .presets p { margin: 0 6px 0 0; }
 .pagetext { width: 100%; min-height: 360px; padding: 12px 14px; font: 15px/1.55 var(--font, inherit); border: 1px solid var(--line, #e5e5e5); border-radius: 10px; resize: vertical; }
 .pagedel { margin-top: 14px; }
+
+/* Таблица цен: компактные поля ввода */
+.pricein { width: 130px; height: 36px; padding: 0 10px; border: 1px solid var(--line, #e5dccf); border-radius: 8px; background: var(--surface, #fff); font: inherit; text-align: right; }
+.pricein--s { width: 80px; }
+.is-off { opacity: .6; }

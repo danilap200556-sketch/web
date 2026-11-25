@@ -278,6 +278,15 @@ const SCHEMA = [
      sort INTEGER NOT NULL DEFAULT 100,
      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
    )`,
+  // Ручные цены на электронику: закупка вручную, наценка товара и цена на сайте задаются в админке («Электроника» -> «Таблица цен»)
+  `CREATE TABLE IF NOT EXISTS webshop.ext_prices (
+     ext_id INTEGER PRIMARY KEY REFERENCES webshop.ext_products(id) ON DELETE CASCADE,
+     buy_price NUMERIC(12,2) CHECK (buy_price IS NULL OR buy_price >= 0),
+     markup_pct NUMERIC(6,2) CHECK (markup_pct IS NULL OR markup_pct BETWEEN 0 AND 300),
+     manual_price NUMERIC(12,2) CHECK (manual_price IS NULL OR manual_price >= 0),
+     updated_by TEXT NOT NULL DEFAULT '',
+     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+   )`,
 ];
 
 module.exports = { SCHEMA };

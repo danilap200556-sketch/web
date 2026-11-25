@@ -335,8 +335,10 @@ function createPartner({ db, cfg, fetchImpl = fetch, sleep = sleepReal, log = co
 
   async function rows() {
     const r = await db.query(
-      `SELECT id, source, path, section, title, brand, price, old_price, in_stock, images, created_at
-         FROM webshop.ext_products WHERE source = $1 AND seen_at > NOW() - INTERVAL '3 days' ORDER BY id`, [source]);
+      `SELECT e.id, e.source, e.path, e.section, e.title, e.brand, e.price, e.old_price, e.in_stock, e.images, e.created_at,
+              p.buy_price, p.markup_pct, p.manual_price
+         FROM webshop.ext_products e LEFT JOIN webshop.ext_prices p ON p.ext_id = e.id
+        WHERE e.source = $1 AND e.seen_at > NOW() - INTERVAL '3 days' ORDER BY e.id`, [source]);
     return r.rows;
   }
   async function description(id) {
@@ -361,7 +363,7 @@ function createPartner({ db, cfg, fetchImpl = fetch, sleep = sleepReal, log = co
   }
 
   return {
-    enabled, rows, description, status, verify, fetchImage, refreshDetail, syncListings, syncDetails, tick, base,
+    enabled, source, rows, description, status, verify, fetchImage, refreshDetail, syncListings, syncDetails, tick, base,
     syncNow() { if (enabled() && !state.running) { syncListings(); return true; } return false; },
     start({ intervalMs = 60_000, firstMs = 20_000 } = {}) {
       if (!enabled() || c.autostart === false || state.timer) return;

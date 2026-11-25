@@ -301,6 +301,33 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner, pa
     return p.toString();
   }
 
+  // Панель кнопок для электроники: категории (с числом товаров) и бренды выбранной категории. Нажатие выбирает, повторное снимает.
+  function quickBar(c, query) {
+    if (c.dept !== DEPARTMENTS.electronics.slug) return '';
+    const pool = catalog.models.filter((m) => m.dept === 'electronics' && (!c.inStock || m.inStock));
+    const count = (list, key) => { const mp = new Map(); for (const m of list) if (m[key]) mp.set(m[key], (mp.get(m[key]) || 0) + 1); return [...mp].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ru')); };
+    const types = count(pool, 'type');
+    const brands = count(c.types.length ? pool.filter((m) => c.types.includes(m.type)) : pool, 'brand').slice(0, 24);
+    // Адрес кнопки: текущие параметры без страницы; ключ key становится равным val, а у активной кнопки убирается
+    const href = (key, val, active) => {
+      const p = new URLSearchParams();
+      for (const [k, v] of Object.entries(query)) {
+        if (k === 'page' || (k === key && key !== undefined)) continue;
+        for (const x of Array.isArray(v) ? v : [v]) if (x !== '') p.append(k, String(x));
+      }
+      if (key && !active) p.append(key, val);
+      return '/catalog' + (p.toString() ? '?' + p : '');
+    };
+    const btn = (key, val, n, active, label = val, reset = false) => (active
+      ? html`<a class="is-active" href="${href(key, val, true)}" aria-pressed="true">${label} <i>${n}</i></a>`
+      : html`<a href="${href(key, val, reset)}">${label} <i>${n}</i></a>`);
+    if (!types.length) return '';
+    return html`<nav class="quickbar" aria-label="Категории и бренды электроники">
+      <div class="quickbar__row">${btn('type', '', pool.length, !c.types.length, 'Все', true)}${types.map(([t, n]) => btn('type', t, n, c.types.includes(t)))}</div>
+      ${brands.length > 1 ? html`<div class="quickbar__row quickbar__row--brands"><span class="quickbar__t">Бренды</span>${brands.map(([b, n]) => btn('brand', b, n, c.brands.includes(b)))}</div>` : ''}
+    </nav>`;
+  }
+
   app.get('/catalog', shopCtx, (req, res) => {
     const ctx = req.ctx;
     const r = catalog.search(req.query);
@@ -351,6 +378,7 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner, pa
           </form>
         </div>
       </div>
+      ${quickBar(c, req.query)}
       ${chips.length ? html`<div class="fchips">${chips}<a class="fchips__reset" href="/catalog${c.dept ? '?dept=' + c.dept : ''}">Сбросить всё</a></div>` : ''}
       <div class="catalog__cols">
         <aside class="filters" id="filters" data-filters>

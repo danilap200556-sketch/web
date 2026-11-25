@@ -165,7 +165,7 @@ class Catalog {
 
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: this.tz }).format(new Date()); // YYYY-MM-DD в часовом поясе магазина
     const all = [...buildModels(rows, { reserved: resMap, sitePrices, today, showNoteSizes: Boolean(cfg.showNoteSizes) }),
-      ...buildExtModels(extRows, { markupPct: Number((cfg.electronics || {}).markupPct) || 0, showOldPrice: Boolean((cfg.electronics || {}).showOldPrice), baseUrl: this.partner ? this.partner.base : '' })];
+      ...buildExtModels(extRows, { markupPct: Number((cfg.electronics || {}).markupPct) || 0, showOldPrice: Boolean((cfg.electronics || {}).showOldPrice), baseUrl: this.partner ? this.partner.bases : '' })];
     const models = [];
     for (const m of all) {
       const f = flagMap.get(m.key);

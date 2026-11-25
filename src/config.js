@@ -71,6 +71,14 @@ function load(env = process.env) {
       sections: (env.PARTNER_SECTIONS || '').split(/[\s,;]+/).filter(Boolean),
       delayMs: intEnv(env.PARTNER_DELAY_MS, 3000),
     },
+    // Второй источник электроники: магазин BAZA (bazaplay.ru). Адреса товаров берутся из их sitemap.xml, цены и фото - из карточек.
+    // BAZA_SYNC=off выключает; BAZA_URL - адрес сайта; BAZA_DELAY_MS - пауза между запросами к их сайту.
+    baza: {
+      enabled: env.BAZA_SYNC ? env.BAZA_SYNC !== 'off' : prod,
+      autostart: env.BAZA_AUTOSTART !== 'off',
+      baseUrl: (env.BAZA_URL || 'https://bazaplay.ru').replace(/\/+$/, ''),
+      delayMs: intEnv(env.BAZA_DELAY_MS, 3000),
+    },
     // Эквайринг ТБанк (карта онлайн): ключи терминала из личного кабинета. Деньги приходят на расчётный счёт по договору эквайринга.
     // TBANK_TAXATION (например usn_income) включает чек в запросе платежа, если у терминала подключена облачная касса.
     acquiring: {

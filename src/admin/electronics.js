@@ -1,5 +1,5 @@
 'use strict';
-// Раздел «Электроника»: каталог партнёра (Sergeev Electronics) - состояние обхода, наценка, ручное обновление.
+// Раздел «Электроника»: каталоги источников (Sergeev Electronics, bazaplay.ru) - состояние обхода, наценка, ручное обновление.
 // Скрыть отдельный товар или закрепить его можно в «Витрина и каталог»: товары партнёра там в общем списке.
 const { html } = require('../html');
 const { num, rub, str } = require('../util');
@@ -54,15 +54,15 @@ module.exports = function mount({ db, auth, render, fmt, router, settings, partn
     const q = str(src.q, 60);
     const flt = FLT[src.flt] ? src.flt : 'all';
     const page = Math.max(1, parseInt(src.page, 10) || 1);
-    const params = [partner.source];
-    const where = ['e.source = $1', "e.seen_at > NOW() - INTERVAL '3 days'"];
+    const params = [partner.sources];
+    const where = ['e.source = ANY($1::text[])', "e.seen_at > NOW() - INTERVAL '3 days'", '(e.price > 0 OR p.manual_price > 0)'];
     if (q) { params.push(`%${q.replace(/[%_\\]/g, '\\$&')}%`); where.push(`(e.title ILIKE $${params.length} OR e.brand ILIKE $${params.length} OR e.path ILIKE $${params.length})`); }
     if (flt === 'manual') where.push('(p.manual_price IS NOT NULL OR p.buy_price IS NOT NULL OR p.markup_pct IS NOT NULL)');
     if (flt === 'stock') where.push('e.in_stock');
     if (flt === 'out') where.push('NOT e.in_stock');
     const from = `FROM webshop.ext_products e LEFT JOIN webshop.ext_prices p ON p.ext_id = e.id WHERE ${where.join(' AND ')}`;
     const [rows, cnt] = await Promise.all([
-      db.query(`SELECT e.id, e.title, e.brand, e.section, e.price, e.in_stock, e.images, p.buy_price, p.markup_pct, p.manual_price ${from} ORDER BY e.brand, e.title, e.id LIMIT ${PAGE} OFFSET ${(page - 1) * PAGE}`, params),
+      db.query(`SELECT e.id, e.source, e.title, e.brand, e.section, e.price, e.in_stock, e.images, p.buy_price, p.markup_pct, p.manual_price ${from} ORDER BY e.brand, e.title, e.id LIMIT ${PAGE} OFFSET ${(page - 1) * PAGE}`, params),
       db.query(`SELECT COUNT(*)::int AS n ${from}`, params),
     ]);
     const g = await globalPct();
@@ -88,7 +88,7 @@ module.exports = function mount({ db, auth, render, fmt, router, settings, partn
         ${rows.rows.length ? html`<div class="tablewrap"><table class="table table--rows"><thead><tr><th>Товар</th><th class="num">Закупка партнёра</th><th>Закупка вручную</th><th>Наценка, %</th><th class="num">Цена на сайте</th><th>Ручная цена</th></tr></thead><tbody>
           ${rows.rows.map((r) => { const brand = r.brand || detectBrand(r.title, r.section); const site = priceOf(r, g); return html`<tr class="${r.in_stock ? '' : 'is-off'}">
             <td><div class="prod">${Array.isArray(r.images) && r.images.length ? html`<img src="${photoUrl(extPhoto(r.id, 0), 360)}" alt="" width="44" height="44" loading="lazy">` : html`<span class="toplist__ph"></span>`}
-              <div><b>${r.title}</b><small class="muted">${[brand, `№ ${r.id}`, r.in_stock ? '' : 'нет в наличии'].filter(Boolean).join(' · ')}</small></div></div></td>
+              <div><b>${r.title}</b><small class="muted">${[brand, `№ ${r.id}`, partner.list.length > 1 ? (partner.get(r.source) || {}).name : '', r.in_stock ? '' : 'нет в наличии'].filter(Boolean).join(' · ')}</small></div></div></td>
             <td class="num">${rub(r.price)}</td>
             <td><input class="pricein" name="buy_${r.id}" value="${val(r, 'buy', 'buy_price')}" inputmode="decimal" placeholder="как у партнёра" aria-label="Закупка вручную"></td>
             <td><input class="pricein pricein--s" name="mk_${r.id}" value="${val(r, 'mk', 'markup_pct')}" inputmode="decimal" placeholder="${g}" aria-label="Наценка, процентов"></td>
@@ -112,8 +112,8 @@ module.exports = function mount({ db, auth, render, fmt, router, settings, partn
     try {
       const ids = String(req.body.ids || '').split(',').map((x) => parseInt(x, 10)).filter((x) => Number.isInteger(x) && x > 0).slice(0, 200);
       const cur = new Map((await db.query(
-        'SELECT e.id, e.title, p.buy_price, p.markup_pct, p.manual_price FROM webshop.ext_products e LEFT JOIN webshop.ext_prices p ON p.ext_id = e.id WHERE e.id = ANY($1) AND e.source = $2',
-        [ids, partner.source])).rows.map((r) => [r.id, r]));
+        'SELECT e.id, e.title, p.buy_price, p.markup_pct, p.manual_price FROM webshop.ext_products e LEFT JOIN webshop.ext_prices p ON p.ext_id = e.id WHERE e.id = ANY($1) AND e.source = ANY($2::text[])',
+        [ids, partner.sources])).rows.map((r) => [r.id, r]));
       const errors = [];
       const changes = [];
       for (const id of ids) {
@@ -159,7 +159,7 @@ module.exports = function mount({ db, auth, render, fmt, router, settings, partn
       const { rows } = await db.query(
         `SELECT e.id, e.title, e.brand, e.section, e.price, e.in_stock, p.buy_price, p.markup_pct, p.manual_price
            FROM webshop.ext_products e LEFT JOIN webshop.ext_prices p ON p.ext_id = e.id
-          WHERE e.source = $1 AND e.seen_at > NOW() - INTERVAL '3 days' ORDER BY e.brand, e.title, e.id`, [partner.source]);
+          WHERE e.source = ANY($1::text[]) AND e.seen_at > NOW() - INTERVAL '3 days' AND (e.price > 0 OR p.manual_price > 0) ORDER BY e.brand, e.title, e.id`, [partner.sources]);
       const head = ['id', 'Название', 'Бренд', 'Закупка партнёра', 'Закупка вручную', 'Наценка, %', 'Ручная цена', 'Цена на сайте', 'В наличии'];
       const lines = rows.map((r) => [r.id, r.title, r.brand || detectBrand(r.title, r.section), numCsv(r.price), numCsv(r.buy_price), numCsv(r.markup_pct), numCsv(r.manual_price), priceOf(r, g), r.in_stock ? 'да' : 'нет'].map(csvCell).join(';'));
       res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="elektronika-ceny.csv"', 'Cache-Control': 'no-store' });
@@ -179,8 +179,8 @@ module.exports = function mount({ db, auth, render, fmt, router, settings, partn
       if (col.buy < 0 && col.mk < 0 && col.man < 0) return flash('err', 'Во вставке нет колонок для изменения: «Закупка вручную», «Наценка, %» или «Ручная цена»');
       const ids = rows.slice(1).map((r) => parseInt(r.cells[col.id], 10)).filter((x) => Number.isInteger(x) && x > 0);
       const cur = new Map((await db.query(
-        'SELECT e.id, p.buy_price, p.markup_pct, p.manual_price FROM webshop.ext_products e LEFT JOIN webshop.ext_prices p ON p.ext_id = e.id WHERE e.id = ANY($1) AND e.source = $2',
-        [ids, partner.source])).rows.map((r) => [r.id, r]));
+        'SELECT e.id, p.buy_price, p.markup_pct, p.manual_price FROM webshop.ext_products e LEFT JOIN webshop.ext_prices p ON p.ext_id = e.id WHERE e.id = ANY($1) AND e.source = ANY($2::text[])',
+        [ids, partner.sources])).rows.map((r) => [r.id, r]));
       const errors = [];
       const changes = [];
       let ok = 0;
@@ -206,33 +206,37 @@ module.exports = function mount({ db, auth, render, fmt, router, settings, partn
 
   router.get('/electronics', auth.require('electronics'), async (req, res, next) => {
     try {
-      const st = await partner.status();
+      const sts = await Promise.all(partner.list.map((p) => p.status()));
       const s = await settings.get();
-      const l = st.listing;
       const chip = (cls, text) => html`<span class="chip ${cls}">${text}</span>`;
-      const body = html`
-      <section class="card card--pad">
-        <header class="card__h"><div><h2>Каталог партнёра: Sergeev Electronics</h2>
-          <p class="muted">Ассортимент, цены, наличие и фото электроники подтягиваются с сайта партнёра и показываются в разделе «Электроника». Заказы на такие товары приходят вам обычным порядком, а передать их партнёру нужно самим: в заказе они помечены.</p></div></header>
+      const card = (st) => {
+        const l = st.listing;
+        return html`<section class="card card--pad">
+        <header class="card__h"><div><h2>Каталог: ${st.name}</h2>
+          <p class="muted">Ассортимент, цены, наличие и фото электроники подтягиваются с сайта поставщика и показываются в разделе «Электроника». Заказы на такие товары приходят вам обычным порядком, а передать их поставщику нужно самим: в заказе они помечены.</p></div></header>
         <p>${st.enabled ? chip('chip--green', 'синхронизация включена') : chip('chip--gray', 'синхронизация выключена')}
           ${st.running === 'listing' ? chip('chip--blue', 'идёт обход каталога') : st.running === 'details' ? chip('chip--blue', 'идёт загрузка карточек') : ''}</p>
         <dl class="facts">
           <dt>Товаров в каталоге</dt><dd>${num(st.total)}, в наличии ${num(st.in_stock)}</dd>
+          ${st.bySitemap && st.found > st.total ? html`<dt>Найдено адресов на сайте</dt><dd>${num(st.found)} (цены и фото загружаются из карточек порциями: за минуту примерно 12 товаров; часть адресов - разделы и снятые с продажи товары, их на сайте не будет)</dd>` : ''}
           <dt>С описанием и крупными фото</dt><dd>${num(st.with_details)} из ${num(st.total)} (остальные догружаются в фоне)</dd>
-          <dt>Последний обход каталога</dt><dd>${l && l.finishedAt ? html`${fmt.dateTime(l.finishedAt)}: страниц ${num(l.pages)}, товаров ${num(l.items)}` : 'ещё не было'}</dd>
+          <dt>Последний обход каталога</dt><dd>${l && l.finishedAt ? html`${fmt.dateTime(l.finishedAt)}: ${st.bySitemap ? `адресов ${num(l.items)}` : `страниц ${num(l.pages)}, товаров ${num(l.items)}`}` : 'ещё не было'}</dd>
           ${l && l.error ? html`<dt>Ошибка обхода</dt><dd class="warn">${l.error}</dd>` : ''}
           <dt>Источник</dt><dd><a href="${st.baseUrl}" target="_blank" rel="noopener">${st.baseUrl}</a></dd>
         </dl>
-        ${st.enabled ? html`<form method="post" action="/admin/electronics/sync">${req.adminCsrf}<button class="btn" type="submit" ${st.running ? 'disabled' : ''}>Обновить каталог сейчас</button>
-          <span class="muted">Обход занимает несколько минут: сайт партнёра опрашивается с паузами.</span></form>` : html`<p class="muted">Включение: на сервере в <code>.env</code> уберите <code>PARTNER_SYNC=off</code> (или задайте <code>PARTNER_SYNC=on</code>) и пересоздайте контейнер.</p>`}
-      </section>
+        ${st.enabled ? html`<form method="post" action="/admin/electronics/sync">${req.adminCsrf}<input type="hidden" name="source" value="${st.source}"><button class="btn" type="submit" ${st.running ? 'disabled' : ''}>Обновить каталог сейчас</button>
+          <span class="muted">Сайт поставщика опрашивается с паузами, поэтому полная загрузка занимает от нескольких минут до нескольких часов.</span></form>` : html`<p class="muted">Включение: на сервере в <code>.env</code> уберите <code>${st.flag}=off</code> (или задайте <code>${st.flag}=on</code>) и пересоздайте контейнер.</p>`}
+      </section>`;
+      };
+      const body = html`
+      ${sts.map(card)}
       <section class="card card--pad">
         <h2>Цены</h2>
         ${can(req.admin.user.role, 'eprices') ? html`<p><a class="btn btn--primary" href="/admin/electronics/prices">Таблица цен: закупка, наценка, ручная цена</a> <span class="muted">Правьте цены каждого товара вручную, выгружайте и загружайте таблицу из Excel.</span></p>` : ''}
-        <p class="muted">Цена на сайте берётся у партнёра. Если вам нужна наценка, задайте её в процентах: она добавляется к цене партнёра и округляется вверх до 10 ₽. Скидка (зачёркнутая цена) тоже пересчитывается.</p>
+        <p class="muted">Цена на сайте берётся у поставщика. Если вам нужна наценка, задайте её в процентах: она добавляется к цене поставщика и округляется вверх до 10 ₽. Скидка (зачёркнутая цена) тоже пересчитывается. Наценка одна на все источники; для отдельного товара её можно задать в таблице цен.</p>
         <form method="post" action="/admin/electronics/markup" class="mform__grid">${req.adminCsrf}
-          <label class="field">Наценка к цене партнёра, %<input name="markupPct" inputmode="decimal" value="${(s.electronics || {}).markupPct || 0}" maxlength="5"></label>
-          <label class="check field--wide"><input type="checkbox" name="showOldPrice" ${(s.electronics || {}).showOldPrice ? 'checked' : ''}><span>Показывать зачёркнутую цену партнёра как скидку <small class="muted">(у партнёра зачёркнутая цена стоит почти у каждого товара; включайте, только если уверены, что это настоящая скидка)</small></span></label>
+          <label class="field">Наценка к цене поставщика, %<input name="markupPct" inputmode="decimal" value="${(s.electronics || {}).markupPct || 0}" maxlength="5"></label>
+          <label class="check field--wide"><input type="checkbox" name="showOldPrice" ${(s.electronics || {}).showOldPrice ? 'checked' : ''}><span>Показывать зачёркнутую цену поставщика как скидку <small class="muted">(у поставщиков зачёркнутая цена стоит почти у каждого товара; включайте, только если уверены, что это настоящая скидка)</small></span></label>
           <div class="mform__foot"><button class="btn btn--primary" type="submit">Сохранить</button></div>
         </form>
       </section>`;
@@ -242,7 +246,10 @@ module.exports = function mount({ db, auth, render, fmt, router, settings, partn
 
   router.post('/electronics/sync', auth.require('electronics'), async (req, res, next) => {
     try {
-      res.flash(partner.syncNow() ? 'ok' : 'err', partner.enabled() ? 'Обход каталога запущен: товары появляются на сайте по мере загрузки' : 'Синхронизация выключена');
+      const only = partner.sources.includes(req.body.source) ? req.body.source : '';
+      const started = partner.syncNow(only);
+      const svc = only ? partner.get(only) : partner;
+      res.flash(started ? 'ok' : 'err', started ? 'Обход каталога запущен: товары появляются на сайте по мере загрузки' : svc.enabled() ? 'Обход уже идёт' : 'Синхронизация выключена');
       res.redirect('/admin/electronics');
     } catch (e) { next(e); }
   });

@@ -12,7 +12,7 @@ const { createWriteoff } = require('./writeoff');
 const { createNotifier } = require('./notify');
 const { createCarriers } = require('./carriers');
 const { createPayments } = require('./payments');
-const { createPartner } = require('./partner');
+const { createPartners } = require('./partners');
 const { createAccounts } = require('./accounts');
 const { createSessions } = require('./customer-sessions');
 const { createCodes } = require('./auth-codes');
@@ -37,7 +37,7 @@ function createApp(cfg, db, opts = {}) {
   app.set('trust proxy', cfg.trustProxy);
 
   const settings = createSettings(db, cfg);
-  const partner = createPartner({ db, cfg, fetchImpl: opts.fetchImpl, sleep: opts.sleep });
+  const partner = createPartners({ db, cfg, fetchImpl: opts.fetchImpl, sleep: opts.sleep });
   const catalog = new Catalog(db, cfg, settings);
   catalog.partner = partner;
   const delivery = createDelivery(db);

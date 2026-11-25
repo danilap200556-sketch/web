@@ -127,11 +127,27 @@ function parseProduct(html, base) {
   };
 }
 
+// ---------- источники ----------
+// Профиль источника: чем сервис обхода отличается для разных сайтов. Sergeev Electronics (OpenCart) читается по страницам категорий,
+// bazaplay.ru (Битрикс, см. baza.js) - по sitemap.xml. Обход, паузы, robots.txt, проверка цены и фото у всех общие.
+const SERGEEV = {
+  source: 'sergeev', name: 'Sergeev Electronics', flag: 'PARTNER_SYNC', defaultBase: 'https://sergeev-electronics.ru',
+  conf: (cfg) => cfg.partner, parseProduct, detailEveryMs: DETAIL_EVERY_MS, metaKey: 'ext_listing',
+};
+
+const titleFromPath = (path) => {
+  const t = String(path).replace(/\/+$/, '').split('/').pop().replace(/[-_]+/g, ' ').trim();
+  return (t.charAt(0).toUpperCase() + t.slice(1)) || 'Товар';
+};
+
 // ---------- сервис ----------
-function createPartner({ db, cfg, fetchImpl = fetch, sleep = sleepReal, log = console }) {
-  const c = cfg.partner || {};
-  const base = String(c.baseUrl || 'https://sergeev-electronics.ru').replace(/\/+$/, '');
-  const source = 'sergeev';
+function createPartner({ db, cfg, fetchImpl = fetch, sleep = sleepReal, log = console }, profile = SERGEEV) {
+  const c = profile.conf(cfg) || {};
+  const base = String(c.baseUrl || profile.defaultBase).replace(/\/+$/, '');
+  const source = profile.source;
+  const parseCard = profile.parseProduct;
+  const detailEvery = profile.detailEveryMs || DETAIL_EVERY_MS;
+  const tag = source === 'sergeev' ? '[partner]' : `[${source}]`;
   // Заголовки HTTP - только латиница: кириллица в User-Agent роняет запрос
   const ua = `SolehouseCatalogSync/1.0 (partner catalog sync for an online store${cfg.publicUrl ? '; ' + cfg.publicUrl : ''})`.replace(/[^\x20-\x7e]/g, '?');
   const state = { running: '', timer: null, first: null, missingSizes: new Set(), touched: new Map(), robots: null, robotsAt: 0, last: 0, slow: 0, verifyCache: new Map(), imgSem: 0 };
@@ -198,6 +214,25 @@ function createPartner({ db, cfg, fetchImpl = fetch, sleep = sleepReal, log = co
     }
   }
 
+  // Источник без списков товаров по страницам (bazaplay.ru): адреса берём из sitemap.xml. Цены, названия и фото узнаём позже, из карточек.
+  // Закрытое в robots.txt пропускаем. Пока карточка не загружена, товар без цены и в каталоге не показывается.
+  async function crawlSitemap(result) {
+    const { items, files } = await profile.discover({ page, base });
+    await ensureRobots();
+    const allowed = items.filter((x) => state.robots.allows('/' + x.path));
+    if (!allowed.length) throw new PartnerError('в sitemap нет ни одного товара');
+    for (let i = 0; i < allowed.length; i += 500) {
+      const part = allowed.slice(i, i + 500);
+      await db.query(
+        `INSERT INTO webshop.ext_products (source, path, section, title, price, in_stock, images, seen_at)
+         SELECT $1, x.path, x.section, x.title, 0, FALSE, '[]'::jsonb, NOW() FROM unnest($2::text[], $3::text[], $4::text[]) AS x(path, section, title)
+         ON CONFLICT (source, path) DO UPDATE SET seen_at = NOW(),
+           section = CASE WHEN webshop.ext_products.detail_at IS NULL THEN EXCLUDED.section ELSE webshop.ext_products.section END`,
+        [source, part.map((x) => x.path), part.map((x) => x.section || ''), part.map((x) => titleFromPath(x.path))]);
+    }
+    result.pages = files; result.items = allowed.length; result.sections = 1;
+  }
+
   // Разбор категорий: страница за страницей. Что не встретилось за весь удачный обход, считаем снятым с продажи.
   async function syncListings() {
     if (state.running) return { skipped: true };
@@ -205,28 +240,31 @@ function createPartner({ db, cfg, fetchImpl = fetch, sleep = sleepReal, log = co
     const started = new Date();
     const result = { at: started.toISOString(), pages: 0, items: 0, sections: 0, error: '' };
     try {
-      const sections = (c.sections && c.sections.length ? c.sections : SECTIONS);
-      for (const section of sections) {
-        let maxPage = 1;
-        for (let p = 1; p <= maxPage && p <= MAX_PAGES; p++) {
-          const html = await page(`${section}${p > 1 ? `?page=${p}` : ''}`);
-          const parsed = parseListing(html, base);
-          if (p === 1) maxPage = parsed.maxPage;
-          if (!parsed.items.length) break;
-          await upsertListing(parsed.items, section);
-          result.pages++; result.items += parsed.items.length;
-          if (c.onProgress) c.onProgress(result);
+      if (profile.discover) await crawlSitemap(result);
+      else {
+        const sections = (c.sections && c.sections.length ? c.sections : SECTIONS);
+        for (const section of sections) {
+          let maxPage = 1;
+          for (let p = 1; p <= maxPage && p <= MAX_PAGES; p++) {
+            const html = await page(`${section}${p > 1 ? `?page=${p}` : ''}`);
+            const parsed = parseListing(html, base);
+            if (p === 1) maxPage = parsed.maxPage;
+            if (!parsed.items.length) break;
+            await upsertListing(parsed.items, section);
+            result.pages++; result.items += parsed.items.length;
+            if (c.onProgress) c.onProgress(result);
+          }
+          result.sections++;
         }
-        result.sections++;
       }
       await db.query("UPDATE webshop.ext_products SET in_stock = FALSE WHERE source = $1 AND seen_at < $2 AND in_stock", [source, started]);
     } catch (e) {
       result.error = e.message;
-      log.warn(`[partner] обход каталога прерван: ${e.message}`);
+      log.warn(`${tag} обход каталога прерван: ${e.message}`);
     } finally {
       result.finishedAt = new Date().toISOString();
       state.running = '';
-      await setMeta('ext_listing', result).catch(() => {});
+      await setMeta(profile.metaKey, result).catch(() => {});
     }
     return result;
   }
@@ -235,8 +273,11 @@ function createPartner({ db, cfg, fetchImpl = fetch, sleep = sleepReal, log = co
     await db.query(
       `UPDATE webshop.ext_products SET description = $2, images = CASE WHEN $3::jsonb = '[]'::jsonb THEN images ELSE $3::jsonb END,
               brand = CASE WHEN brand = '' THEN $4 ELSE brand END, sku = $5, price = CASE WHEN $6 > 0 THEN $6 ELSE price END,
-              in_stock = $7, detail_at = NOW() WHERE id = $1`,
-      [row.id, d.description, JSON.stringify(d.images), d.brand || '', d.sku, d.price, d.inStock]);
+              in_stock = $7, detail_at = NOW(),
+              title = CASE WHEN $8 <> '' THEN $8 ELSE title END, section = CASE WHEN $9 <> '' THEN $9 ELSE section END,
+              old_price = CASE WHEN $10::boolean THEN NULLIF($11::numeric, 0) ELSE old_price END
+        WHERE id = $1`,
+      [row.id, d.description || '', JSON.stringify(d.images || []), d.brand || '', d.sku || '', d.price, d.inStock, d.title || '', d.section || '', 'oldPrice' in d, d.oldPrice || 0]);
   }
 
   // Карточки товаров порциями: описание, большие фото, точная цена
@@ -248,19 +289,19 @@ function createPartner({ db, cfg, fetchImpl = fetch, sleep = sleepReal, log = co
       const { rows } = await db.query(
         `SELECT id, path FROM webshop.ext_products WHERE source = $1 AND seen_at > NOW() - INTERVAL '3 days'
             AND (detail_at IS NULL OR detail_at < NOW() - make_interval(secs => $2))
-          ORDER BY (detail_at IS NULL) DESC, in_stock DESC, id LIMIT $3`, [source, DETAIL_EVERY_MS / 1000, limit]);
+          ORDER BY (detail_at IS NULL) DESC, in_stock DESC, id LIMIT $3`, [source, detailEvery / 1000, limit]);
       for (const row of rows) {
         try {
-          const d = parseProduct(await page(row.path), base);
-          if (d) { await saveDetail(row, d); done++; } else await db.query('UPDATE webshop.ext_products SET detail_at = NOW() WHERE id = $1', [row.id]);
+          const d = parseCard(await page(row.path), base);
+          if (d) { await saveDetail(row, d); done++; } else await db.query('UPDATE webshop.ext_products SET detail_at = NOW() WHERE id = $1', [row.id]); // не товар (раздел, служебная страница): повторно спросим не скоро
         } catch (e) {
           if (e instanceof PartnerError && e.status === 404) await db.query('UPDATE webshop.ext_products SET in_stock = FALSE, detail_at = NOW() WHERE id = $1', [row.id]);
           else if (e instanceof PartnerError && e.transient) throw e; // сайт недоступен: остановимся, продолжим на следующем проходе
-          else log.warn(`[partner] ${row.path}: ${e.message}`);
+          else log.warn(`${tag} ${row.path}: ${e.message}`);
         }
       }
     } catch (e) {
-      log.warn(`[partner] карточки: ${e.message}`);
+      log.warn(`${tag} карточки: ${e.message}`);
     } finally {
       state.running = '';
     }
@@ -274,13 +315,13 @@ function createPartner({ db, cfg, fetchImpl = fetch, sleep = sleepReal, log = co
     if (last && Date.now() - last < 600_000) return;
     state.touched.set(id, Date.now());
     if (state.touched.size > 2000) state.touched.delete(state.touched.keys().next().value);
-    const { rows } = await db.query('SELECT id, path, detail_at FROM webshop.ext_products WHERE id = $1', [id]);
+    const { rows } = await db.query('SELECT id, path, detail_at FROM webshop.ext_products WHERE id = $1 AND source = $2', [id, source]);
     const row = rows[0];
-    if (!row || (row.detail_at && Date.now() - new Date(row.detail_at).getTime() < DETAIL_EVERY_MS)) return;
+    if (!row || (row.detail_at && Date.now() - new Date(row.detail_at).getTime() < detailEvery)) return;
     try {
-      const d = parseProduct(await page(row.path), base);
+      const d = parseCard(await page(row.path), base);
       if (d) await saveDetail(row, d);
-    } catch (e) { log.warn(`[partner] ${row.path}: ${e.message}`); }
+    } catch (e) { log.warn(`${tag} ${row.path}: ${e.message}`); }
   }
 
   // Свежие цена и наличие товара перед оформлением заказа. null - узнать не удалось (сайт партнёра недоступен).
@@ -288,24 +329,25 @@ function createPartner({ db, cfg, fetchImpl = fetch, sleep = sleepReal, log = co
     const hit = state.verifyCache.get(path);
     if (hit && Date.now() - hit.at < 60_000) return hit.v;
     try {
-      const d = parseProduct(await page(path, { retries: 0, timeoutMs: 8000 }), base);
-      if (!d || !(d.price > 0)) return null;
+      const d = parseCard(await page(path, { retries: 0, timeoutMs: 8000 }), base);
+      if (!d) return null;
+      if (!(d.price > 0) && d.inStock) return null;   // цены нет, а товар «в наличии»: разметка непонятна, ответить нечем
       const { rows } = await db.query('SELECT id FROM webshop.ext_products WHERE source = $1 AND path = $2', [source, path]);
       if (rows[0]) await saveDetail(rows[0], d);
-      const v = { price: d.price, inStock: d.inStock };
+      const v = { price: d.price > 0 ? d.price : 0, inStock: d.price > 0 && d.inStock };
       state.verifyCache.set(path, { at: Date.now(), v });
       if (state.verifyCache.size > 300) state.verifyCache.delete(state.verifyCache.keys().next().value);
       return v;
     } catch (e) {
       if (e instanceof PartnerError && e.status === 404) return { price: 0, inStock: false };
-      log.warn(`[partner] проверка ${path}: ${e.message}`);
+      log.warn(`${tag} проверка ${path}: ${e.message}`);
       return null;
     }
   }
 
   // Фото: только с сайта партнёра (другие адреса не качаем), через простую очередь на 3 одновременных загрузки
   async function fetchImage(id, idx) {
-    const { rows } = await db.query('SELECT images FROM webshop.ext_products WHERE id = $1', [id]);
+    const { rows } = await db.query('SELECT images FROM webshop.ext_products WHERE id = $1 AND source = $2', [id, source]);
     const url = rows[0] && Array.isArray(rows[0].images) ? rows[0].images[idx] : '';
     if (!url) return null;
     let u;
@@ -338,7 +380,7 @@ function createPartner({ db, cfg, fetchImpl = fetch, sleep = sleepReal, log = co
       `SELECT e.id, e.source, e.path, e.section, e.title, e.brand, e.price, e.old_price, e.in_stock, e.images, e.created_at,
               p.buy_price, p.markup_pct, p.manual_price
          FROM webshop.ext_products e LEFT JOIN webshop.ext_prices p ON p.ext_id = e.id
-        WHERE e.source = $1 AND e.seen_at > NOW() - INTERVAL '3 days' ORDER BY e.id`, [source]);
+        WHERE e.source = $1 AND e.seen_at > NOW() - INTERVAL '3 days' AND (e.price > 0 OR p.manual_price > 0) ORDER BY e.id`, [source]);
     return r.rows;
   }
   async function description(id) {
@@ -347,23 +389,24 @@ function createPartner({ db, cfg, fetchImpl = fetch, sleep = sleepReal, log = co
   }
 
   async function status() {
-    const [l, cnt] = await Promise.all([meta('ext_listing'), db.query(
-      `SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE in_stock)::int AS in_stock, COUNT(*) FILTER (WHERE detail_at IS NOT NULL)::int AS with_details
+    const [l, cnt] = await Promise.all([meta(profile.metaKey), db.query(
+      `SELECT COUNT(*) FILTER (WHERE price > 0)::int AS total, COUNT(*) FILTER (WHERE in_stock AND price > 0)::int AS in_stock, COUNT(*) FILTER (WHERE detail_at IS NOT NULL AND price > 0)::int AS with_details,
+              COUNT(*)::int AS found
          FROM webshop.ext_products WHERE source = $1 AND seen_at > NOW() - INTERVAL '3 days'`, [source])]);
-    return { enabled: enabled(), running: state.running, listing: l, ...cnt.rows[0], baseUrl: base };
+    return { enabled: enabled(), running: state.running, listing: l, ...cnt.rows[0], baseUrl: base, source, name: profile.name, flag: profile.flag, bySitemap: Boolean(profile.discover) };
   }
 
   async function tick() {
     if (!enabled() || state.running) return;
     try {
-      const l = await meta('ext_listing');
+      const l = await meta(profile.metaKey);
       const stale = !l || !l.finishedAt || Date.now() - new Date(l.finishedAt).getTime() > LISTING_EVERY_MS || (l.error && Date.now() - new Date(l.finishedAt).getTime() > 600_000);
       if (stale) await syncListings(); else await syncDetails({ limit: 12 });
-    } catch (e) { log.warn(`[partner] ${e.message}`); }
+    } catch (e) { log.warn(`${tag} ${e.message}`); }
   }
 
   return {
-    enabled, source, rows, description, status, verify, fetchImage, refreshDetail, syncListings, syncDetails, tick, base,
+    enabled, source, name: profile.name, rows, description, status, verify, fetchImage, refreshDetail, syncListings, syncDetails, tick, base,
     syncNow() { if (enabled() && !state.running) { syncListings(); return true; } return false; },
     start({ intervalMs = 60_000, firstMs = 20_000 } = {}) {
       if (!enabled() || c.autostart === false || state.timer) return;
@@ -376,4 +419,4 @@ function createPartner({ db, cfg, fetchImpl = fetch, sleep = sleepReal, log = co
   };
 }
 
-module.exports = { createPartner, parseRobots, parseListing, parseProduct, parsePrice, bestImages, PartnerError, SECTIONS };
+module.exports = { createPartner, parseRobots, parseListing, parseProduct, parsePrice, bestImages, PartnerError, SECTIONS, SERGEEV, titleFromPath };

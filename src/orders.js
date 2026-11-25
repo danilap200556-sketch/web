@@ -78,7 +78,9 @@ async function createOrder(db, { form, priced, catalog, idemKey, vid, sid, sourc
   // Товары партнёра: цена и наличие перепроверяются на их сайте прямо перед заказом (сайт партнёра недоступен - берём то, что есть)
   if (partner && partner.enabled()) {
     for (const l of lines.filter((x) => isExtPid(x.pid))) {
-      const v = await partner.verify(l.model.ext.path);
+      const svc = partner.get ? partner.get(l.model.ext.source) : partner;
+      if (!svc || !svc.enabled()) continue;   // синхронизация этого источника выключена: берём цену из каталога
+      const v = await svc.verify(l.model.ext.path);
       if (v && (!v.inStock || Math.round(v.price) !== Math.round(l.model.ext.apiPrice))) {
         catalog.invalidate();
         throw new OrderError(`${l.model.title}: ${v.inStock ? 'изменилась цена у поставщика' : 'товара уже нет в наличии'}. Обновите корзину`);

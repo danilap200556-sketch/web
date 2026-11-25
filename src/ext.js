@@ -1,5 +1,5 @@
 'use strict';
-// Товары партнёров (раздел «Электроника», сейчас Sergeev Electronics) как модели витрины. Лежат в webshop.ext_products,
+// Товары партнёров (раздел «Электроника»: Sergeev Electronics и bazaplay.ru) как модели витрины. Лежат в webshop.ext_products,
 // в каталоге выглядят как обычные модели с одним «размером»: так работают поиск, фильтры, корзина и заказ.
 //
 // Сквозные номера: у товара склада product_id - обычный номер (меньше EXT_BASE), у товара партнёра номер = EXT_BASE + id строки.
@@ -37,9 +37,16 @@ const TYPES = [
   ['Часы и браслеты', /(часы|браслет|watch|band\b)/i], ['Наушники', /(наушник|airpods|гарнитур|buds)/i], ['Колонки и звук', /(колонк|акустик|саундбар|homepod|микрофон)/i],
   ['Камеры и дроны', /(камер|дрон|квадрокоптер|osmo|gopro|hero|стабилизатор|insta360)/i], ['Техника для дома', /(пылесос|фен|стайлер|выпрямител|очистител|увлажнител|робот|мультистайлер|завивк)/i],
   ['Телевизоры и мониторы', /(телевизор|монитор|проектор)/i], ['Игровые приставки', /(playstation|xbox|nintendo|приставк|steam deck|джойстик|геймпад)/i],
-  ['Аксессуары', /(кабель|адаптер|зарядк|чехол|стилус|pencil|клавиатур|мышь|метка|airtag|держател|штатив|пленк|стекло|переходник|блок питания|ремешок|powerbank|павербанк|аккумулятор)/i],
+  ['Аксессуары', /(аксессуар|кабель|адаптер|зарядк|чехол|стилус|pencil|клавиатур|мышь|метка|airtag|держател|штатив|пленк|стекло|переходник|блок питания|ремешок|powerbank|павербанк|аккумулятор)/i],
 ];
 const typeOfTitle = (title) => { for (const [t, re] of TYPES) if (re.test(title)) return t; return 'Другая электроника'; };
+// Тип товара: по названию; если название ничего не говорит («Series 12 46mm»), по разделу сайта (идём от самого вложенного)
+const typeOfRow = (title, section = '') => {
+  const t = typeOfTitle(title);
+  if (t !== 'Другая электроника') return t;
+  for (const part of String(section).split('>').reverse()) { const x = typeOfTitle(part); if (x !== 'Другая электроника') return x; }
+  return t;
+};
 
 // Наценка в процентах, округление вверх до 10 ₽. Считаем в «сотых рубля» с округлением, чтобы 100 000 ₽ + 10% не давали 110 010 из-за дробной ошибки.
 const markup = (price, pct) => {
@@ -61,6 +68,8 @@ function priceOf(r, globalPct = 0) {
 // rows: строки webshop.ext_products (с полями ручных цен из webshop.ext_prices). opts.markupPct - наценка к цене партнёра в процентах (0 - цена как у партнёра),
 // opts.showOldPrice - показывать ли зачёркнутую цену партнёра как скидку.
 function buildExtModels(rows, { markupPct = 0, baseUrl = '', showOldPrice = false } = {}) {
+  // baseUrl: один адрес (источник один) или { источник: адрес }
+  const baseOf = (source) => (typeof baseUrl === 'string' ? baseUrl : (baseUrl && baseUrl[source]) || '');
   const out = [];
   for (const r of rows) {
     const price = priceOf(r, markupPct);
@@ -72,14 +81,14 @@ function buildExtModels(rows, { markupPct = 0, baseUrl = '', showOldPrice = fals
     const discount = oldPrice ? Math.max(1, Math.min(99, Math.round((1 - price / oldPrice) * 100))) : 0;
     const images = Array.isArray(r.images) ? r.images.slice(0, 8) : [];
     const photos = images.map((_, i) => extPhoto(r.id, i));
-    const brand = r.brand || detectBrand(r.title, r.section);
+    const brand = r.brand || detectBrand(r.title, r.section) || detectBrand(r.section);
     const model = brand && String(r.title).toLowerCase().includes(brand.toLowerCase()) ? String(r.title).replace(new RegExp(brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), '').replace(/\s+/g, ' ').trim() : String(r.title);
     const inStock = Boolean(r.in_stock);
     const slug = `e${r.id}-${slugify(r.path.split('/').pop())}`.slice(0, 90);
     out.push({
       key: `ext:${r.path}`,
       slug,
-      type: typeOfTitle(r.title),
+      type: typeOfRow(r.title, r.section),
       brand,
       model: model || r.title,
       colorway: '',
@@ -100,10 +109,10 @@ function buildExtModels(rows, { markupPct = 0, baseUrl = '', showOldPrice = fals
       inStock,
       createdAt: r.created_at ? new Date(r.created_at).getTime() : 0,
       search: '',
-      ext: { id: r.id, source: r.source, path: r.path, url: baseUrl ? `${baseUrl}/${r.path}` : '', apiPrice: Number(r.price) },
+      ext: { id: r.id, source: r.source, path: r.path, url: baseOf(r.source) ? `${baseOf(r.source)}/${r.path}` : '', apiPrice: Number(r.price) },
     });
   }
   return out;
 }
 
-module.exports = { EXT_BASE, EXT_STOCK, extPid, isExtPid, extPhoto, parseExtPhoto, detectBrand, typeOfTitle, buildExtModels, markup, priceOf };
+module.exports = { EXT_BASE, EXT_STOCK, extPid, isExtPid, extPhoto, parseExtPhoto, detectBrand, typeOfTitle, typeOfRow, buildExtModels, markup, priceOf };

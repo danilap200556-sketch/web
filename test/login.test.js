@@ -128,10 +128,24 @@ test('в шапке витрины ссылка «Войти» или «Каби
   assert.match((await c.get('/')).text, /href="\/account"[^>]*aria-label="Личный кабинет"/);
 });
 
-test('страница /privacy открывается без входа', async () => {
+test('страница /privacy открывается без входа и называет продавца из реквизитов магазина', async () => {
   const r = await client(shop.base).get('/privacy');
   assert.equal(r.status, 200);
   assert.match(r.text, /персональных данных/);
+  assert.match(r.text, /ИП Усатов Егор Николаевич, ИНН 616614137900/);
+});
+
+test('/privacy: политика, опубликованная в админке «Страницы», главнее заготовки', async () => {
+  const { pages } = shop.services;
+  const saved = await pages.save(null, { slug: 'privacy', title: 'Политика конфиденциальности', body: 'Наш текст политики.', published: true, in_footer: false, sort: 90 });
+  try {
+    const r = await client(shop.base).get('/privacy');
+    assert.equal(r.status, 302);
+    assert.equal(r.location, '/info/privacy');
+    // черновик без текста страницу не заменяет: ссылка из форм входа не должна вести в пустоту
+    await pages.save(saved.id, { slug: 'privacy', title: 'Политика конфиденциальности', body: '', published: true, in_footer: false, sort: 90 });
+    assert.equal((await client(shop.base).get('/privacy')).status, 200);
+  } finally { await pages.remove(saved.id); }
 });
 
 test('без SMS и бота вход выключен: страницы нет, ссылки в шапке нет', async () => {

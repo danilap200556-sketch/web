@@ -8,9 +8,10 @@ const { SmsError } = require('../sms');
 const { AccountError } = require('../accounts');
 const sec = require('../security');
 const views = require('../accountviews');
+const { sellerName } = require('../shopviews');
 
 module.exports = function mount(app, services, shopCtx, send) {
-  const { cfg, db, accounts, sessions, codes, sms, mail, bot } = services;
+  const { cfg, db, pages, accounts, sessions, codes, sms, mail, bot } = services;
   const { cookieOpts } = app.locals.cookies;
 
   const loginOn = () => sms.enabled() || bot.enabled();
@@ -403,10 +404,18 @@ module.exports = function mount(app, services, shopCtx, send) {
     } catch (e) { next(e); }
   });
 
-  app.get('/privacy', shopCtx, (req, res) => {
-    const s = req.ctx.settings;
-    const r = s.payment && s.payment.requisites;
-    send(req, res, { title: 'Политика обработки персональных данных', body: views.privacyPage({ shopName: s.shopName, email: s.email, operator: r && r.name }) });
+  // Ссылка «обработка персональных данных» в формах входа ведёт сюда. Политика, опубликованная в админке («Страницы» → privacy),
+  // главнее заготовки; пока её нет, показываем заготовку с продавцом из реквизитов и «Сведений о продавце».
+  app.get('/privacy', shopCtx, async (req, res, next) => {
+    try {
+      const p = await pages.bySlug('privacy');
+      if (p && p.published && p.body.trim()) return res.redirect(302, '/info/privacy');
+      const s = req.ctx.settings;
+      const r = (s.payment && s.payment.requisites) || {};
+      const legal = s.legal || {};
+      const operator = [sellerName(r.name), r.inn && `ИНН ${r.inn}`, legal.ogrnip && `ОГРНИП ${legal.ogrnip}`, legal.address].filter(Boolean).join(', ');
+      send(req, res, { title: 'Политика обработки персональных данных', body: views.privacyPage({ shopName: s.shopName, email: s.email, operator }) });
+    } catch (e) { next(e); }
   });
 
   return { safeNext, page, needLogin, startSession, loginOn };

@@ -50,3 +50,6 @@
 .sumrows__disc { color: var(--good); font-weight: 650; }
 .minicart__sum--disc b { color: var(--good); }
 .loyalty-hint { margin: 12px 0 0; padding: 10px 14px; border-radius: var(--r-sm); background: var(--accent-soft); font-size: 14px; display: flex; gap: 8px; align-items: center; }
+
+/* В новом оформлении шапка сверху плотная: даём форме входа воздух */
+section.wrap.authpage { padding-top: clamp(44px, 7vw, 96px); }

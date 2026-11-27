@@ -26,3 +26,6 @@
 .quickbar__row a.is-active i { opacity: .75; }
 .quickbar__row--brands a { padding: 7px 14px; font-size: 13.5px; font-weight: 600; }
 .quickbar__t { flex: none; font-size: 11.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); padding-right: 4px; }
+
+/* Характеристики электроники в панели кнопок: линейка, модель, память, SIM, связь, чип, диагональ, корпус */
+.quickbar__row--spec a { padding: 6px 13px; font-size: 13px; font-weight: 600; }

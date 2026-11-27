@@ -45,7 +45,11 @@ const TYPES = [
 ];
 const typeOfTitle = (title) => { for (const [t, re] of TYPES) if (re.test(title)) return t; return 'Другая электроника'; };
 // Тип товара: по названию; если название ничего не говорит («Series 12 46mm»), по разделу сайта (идём от самого вложенного)
+// Аксессуар определяется раньше типа по ключевым словам: «Чехол для iPhone 16» - это чехол, а не смартфон.
+const ACCESSORY_NOUN = /^(?:\S+\s+)?(?:чехл|ремеш|защитн|стекл|пл[её]нк|кабел|держател|подставк|клавиатур|зар[яю]дн|адаптер|переходник|бампер|кейс|футляр|наклейк|брелок|стилус|док-станц|сетев|автомобильн)/i;
 const typeOfRow = (title, section = '') => {
+  const last = String(section).split('>').pop() || '';
+  if (/аксессуар|aksessuar/i.test(last) || ACCESSORY_NOUN.test(String(title).trim())) return 'Аксессуары';
   const t = typeOfTitle(title);
   if (t !== 'Другая электроника') return t;
   for (const part of String(section).split('>').reverse()) { const x = typeOfTitle(part); if (x !== 'Другая электроника') return x; }

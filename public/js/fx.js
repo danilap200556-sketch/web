@@ -19,6 +19,7 @@
     const y = window.scrollY;
     const max = root.scrollHeight - window.innerHeight;
     if (head) head.classList.toggle('is-scrolled', y > 24);
+    if (head) head.classList.toggle('is-stuck', y > 0 && head.getBoundingClientRect().top <= 1);   // шапка прилипла к верху: продлеваем её фон вверх (см. v4.css)
     if (bar) bar.style.setProperty('--p', max > 0 ? (y / max).toFixed(4) : '0');
     if (!reduce) {
       for (const p of par) {

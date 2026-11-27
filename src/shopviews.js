@@ -222,7 +222,7 @@ function shopPage(ctx, { title, description = '', canonical = '', og = null, bod
   <meta property="og:title" content="${fullTitle}">
   <meta property="og:description" content="${desc}">
   ${og && og.image ? html`<meta property="og:image" content="${ctx.baseUrl}${og.image}">` : ''}
-  <meta name="theme-color" content="#000000">
+  <meta name="theme-color" content="#0b0b0b">
   <link rel="icon" href="${lu.icon}" type="${lu.custom ? 'image/png' : 'image/svg+xml'}">
   ${lu.custom ? html`<link rel="apple-touch-icon" href="${lu.icon}">` : ''}
   <link rel="preload" href="/static/fonts/inter-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>

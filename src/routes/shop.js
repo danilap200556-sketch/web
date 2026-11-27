@@ -11,6 +11,8 @@ const { quote, PAY_METHODS } = require('../delivery');
 
 const SIZES_QUICK = ['36', '37', '38', '39', '40', '41', '42', '43', '44', '45', '46'];
 
+const { SPEC_FACETS, CHILD_PARAMS } = require('../specs');
+
 module.exports = function mount(app, { catalog, tracker, cfg, media, partner, pages }, shopCtx, send) {
   // ---------- Главная ----------
   app.get('/', shopCtx, async (req, res, next) => {
@@ -301,18 +303,39 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner, pa
     return p.toString();
   }
 
+  // Линейка (после выбора бренда или категории) и характеристики выбранной линейки: модель, память, SIM, связь, чип, диагональ, корпус.
+  // Значения и числа берутся из результата поиска: они уже учитывают всё остальное, что выбрано.
+  const ROW_SPECS = ['model', 'mem', 'ram', 'sim', 'net', 'chip', 'screen', 'case'];
+  function specRows(c, r, btn) {
+    if (!r || !r.facets || !r.facets.specs) return '';
+    const sp = r.facets.specs;
+    const row = (sf, cls = '') => {
+      const vals = (sp[sf.param] || []).slice(0, 30);
+      if (vals.length < 2 && !c[sf.crit].length) return '';
+      return html`<div class="quickbar__row quickbar__row--spec${cls}"><span class="quickbar__t">${sf.title}</span>${vals.map(([v, n]) => btn(sf.param, v, n, c[sf.crit].includes(v)))}</div>`;
+    };
+    const fam = SPEC_FACETS.find((f) => f.param === 'fam');
+    const out = [];
+    if (c.brands.length || c.types.length || c.fams.length) out.push(row(fam));
+    if (c.fams.length) for (const sf of SPEC_FACETS.filter((f) => ROW_SPECS.includes(f.param))) out.push(row(sf));
+    return out;
+  }
+
   // Панель кнопок для электроники: категории (с числом товаров) и бренды выбранной категории. Нажатие выбирает, повторное снимает.
-  function quickBar(c, query) {
+  function quickBar(c, query, r) {
     if (c.dept !== DEPARTMENTS.electronics.slug) return '';
     const pool = catalog.models.filter((m) => m.dept === 'electronics' && (!c.inStock || m.inStock));
     const count = (list, key) => { const mp = new Map(); for (const m of list) if (m[key]) mp.set(m[key], (mp.get(m[key]) || 0) + 1); return [...mp].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ru')); };
     const types = count(pool, 'type');
     const brands = count(c.types.length ? pool.filter((m) => c.types.includes(m.type)) : pool, 'brand').slice(0, 24);
     // Адрес кнопки: текущие параметры без страницы; ключ key становится равным val, а у активной кнопки убирается
+    // При смене «родителя» выбранное в зависимых сбрасывается: сменили бренд или категорию - линейка и характеристики прежнего выбора не нужны
+    const reset = { type: ['fam', ...CHILD_PARAMS], brand: ['fam', ...CHILD_PARAMS], fam: CHILD_PARAMS };
     const href = (key, val, active) => {
       const p = new URLSearchParams();
+      const skip = new Set(['page', ...(key ? [key] : []), ...(reset[key] || [])]);
       for (const [k, v] of Object.entries(query)) {
-        if (k === 'page' || (k === key && key !== undefined)) continue;
+        if (skip.has(k)) continue;
         for (const x of Array.isArray(v) ? v : [v]) if (x !== '') p.append(k, String(x));
       }
       if (key && !active) p.append(key, val);
@@ -325,6 +348,7 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner, pa
     return html`<nav class="quickbar" aria-label="Категории и бренды электроники">
       <div class="quickbar__row">${btn('type', '', pool.length, !c.types.length, 'Все', true)}${types.map(([t, n]) => btn('type', t, n, c.types.includes(t)))}</div>
       ${brands.length > 1 ? html`<div class="quickbar__row quickbar__row--brands"><span class="quickbar__t">Бренды</span>${brands.map(([b, n]) => btn('brand', b, n, c.brands.includes(b)))}</div>` : ''}
+      ${specRows(c, r, btn)}
     </nav>`;
   }
 
@@ -353,6 +377,8 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner, pa
     c.types.forEach((t) => chip(t, 'type', t));
     c.brands.forEach((b) => chip(b, 'brand', b));
     c.sizes.forEach((s) => chip('Размер ' + s, 'size', s));
+    const SPEC_CHIP = { ram: (v) => `ОЗУ ${v}`, chip: (v) => `Чип ${v}`, case: (v) => `Корпус ${v}`, screen: (v) => `Экран ${v}` };
+    for (const sf of SPEC_FACETS) c[sf.crit].forEach((v) => chip((SPEC_CHIP[sf.param] || ((x) => x))(v), sf.param, v));
     if (c.min || c.max) chip(`${c.min ? 'от ' + rub(c.min) : ''} ${c.max ? 'до ' + rub(c.max) : ''}`.trim(), 'price');
     if (c.q) chip(`«${c.q}»`, 'q');
     if (c.sale) chip('Со скидкой', 'sale');
@@ -369,7 +395,7 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner, pa
         <div class="catalog__tools">
           <button class="btn btn--ghost btn--sm filters-open" type="button" data-filters-open>${icon('sliders')} Фильтры${chips.length ? html` <b class="dot">${chips.length}</b>` : ''}</button>
           <form method="get" action="/catalog" class="sort" data-autosubmit>
-            ${hidden('q', c.q)}${hidden('dept', c.dept)}${c.types.map((t) => hidden('type', t))}${c.brands.map((b) => hidden('brand', b))}${c.sizes.map((s) => hidden('size', s))}${hidden('min', c.min)}${hidden('max', c.max)}${!c.inStock ? hidden('all', '1') : ''}${c.sale ? hidden('sale', '1') : ''}
+            ${hidden('q', c.q)}${hidden('dept', c.dept)}${c.types.map((t) => hidden('type', t))}${c.brands.map((b) => hidden('brand', b))}${c.sizes.map((s) => hidden('size', s))}${hidden('min', c.min)}${hidden('max', c.max)}${!c.inStock ? hidden('all', '1') : ''}${c.sale ? hidden('sale', '1') : ''}${SPEC_FACETS.map((sf) => c[sf.crit].map((v) => hidden(sf.param, v)))}
             <label><span class="sort__t">Сортировка</span>
               <select name="sort" aria-label="Сортировка">
                 ${[['popular', 'Сначала популярные'], ['new', 'Новинки'], ['discount', 'Больше скидка'], ['price_asc', 'Подешевле'], ['price_desc', 'Подороже']].map(([v, t]) => html`<option value="${v}" ${c.sort === v ? raw('selected') : ''}>${t}</option>`)}
@@ -378,7 +404,7 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner, pa
           </form>
         </div>
       </div>
-      ${quickBar(c, req.query)}
+      ${quickBar(c, req.query, r)}
       ${chips.length ? html`<div class="fchips">${chips}<a class="fchips__reset" href="/catalog${c.dept ? '?dept=' + c.dept : ''}">Сбросить всё</a></div>` : ''}
       <div class="catalog__cols">
         <aside class="filters" id="filters" data-filters>
@@ -392,6 +418,13 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner, pa
               <a class="sizelink" href="/razmery">Таблица размеров</a></details>` : ''}
             ${brandsShown.length ? html`<details class="fgroup" open><summary>Бренд</summary>
               <div class="fgroup__body fgroup__body--scroll">${brandsShown.map(([b, n]) => html`<label class="check"><input type="checkbox" name="brand" value="${b}" ${c.brands.includes(b) ? raw('checked') : ''}><span>${b}</span><i>${n}</i></label>`)}</div></details>` : ''}
+            ${c.dept === DEPARTMENTS.electronics.slug ? SPEC_FACETS.map((sf) => {
+              const vals = f.specs[sf.param] || [];
+              if (sf.param === 'model' && !c.fams.length) return '';            // модели всех линеек сразу - слишком длинный список
+              if (vals.length < 2 && !c[sf.crit].length) return '';
+              return html`<details class="fgroup" ${sf.param === 'color' && !c[sf.crit].length ? '' : raw('open')}><summary>${sf.title}</summary>
+                <div class="fgroup__body${vals.length > 8 ? ' fgroup__body--scroll' : ''}">${vals.map(([v, n]) => html`<label class="check"><input type="checkbox" name="${sf.param}" value="${v}" ${c[sf.crit].includes(v) ? raw('checked') : ''}><span>${v}</span><i>${n}</i></label>`)}</div></details>`;
+            }) : ''}
             <details class="fgroup" ${c.min || c.max ? raw('open') : ''}><summary>Цена, ₽</summary>
               <div class="fgroup__body price-range">
                 <input type="number" inputmode="numeric" name="min" min="0" step="500" placeholder="от ${f.priceMin ? num(f.priceMin) : '0'}" value="${c.min || ''}" aria-label="Цена от">
@@ -420,7 +453,7 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner, pa
     </section>`;
     send(req, res, {
       title: h1, body, bodyClass: 'page-catalog', canonical: c.q ? '' : '/catalog' + (qs({ dept: c.dept, type: c.types, brand: c.brands }) ? '?' + qs({ dept: c.dept, type: c.types, brand: c.brands }) : ''),
-      noindex: !!c.q || c.page > 1 || c.sizes.length > 0 || !!c.min || !!c.max || c.sale, description: `${h1}: ${countLabel(r.total)} в магазине. Цены от ${rub(f.priceMin || 0)}, доставка по России и самовывоз.`,
+      noindex: !!c.q || c.page > 1 || c.sizes.length > 0 || !!c.min || !!c.max || c.sale || SPEC_FACETS.some((sf) => c[sf.crit].length > 0), description: `${h1}: ${countLabel(r.total)} в магазине. Цены от ${rub(f.priceMin || 0)}, доставка по России и самовывоз.`,
     });
   });
 

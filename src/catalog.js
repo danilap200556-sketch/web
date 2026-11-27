@@ -5,6 +5,7 @@
 const { buildModels, DEPARTMENTS } = require('./model');
 const { buildExtModels } = require('./ext');
 const { loadOwn, buildOwnModels } = require('./own');
+const { parseSpecs, SPEC_FACETS, SPEC_PARAMS, numOf } = require('./specs');
 
 const PAGE_SIZE = 24;
 // Заказы в этих статусах держат товар в резерве: из остатка склада вычитаем, пока склад не списал его сам
@@ -78,16 +79,23 @@ function arr(v) { return v === undefined || v === null || v === '' ? [] : Array.
 // В адресе отдел - slug (obuv, odezhda), у модели - ключ (shoes, clothes): сравнивать нужно по ключу.
 const DEPT_BY_SLUG = Object.fromEntries(Object.entries(DEPARTMENTS).map(([k, v]) => [v.slug, k]));
 
+// except - имя группы (или список имён), которую не проверяем: так считаются счётчики фильтров без собственного выбора группы
+const skip = (except, name) => (Array.isArray(except) ? except.includes(name) : except === name);
 function passes(m, c, except) {
-  if (c.dept && except !== 'dept' && m.dept !== DEPT_BY_SLUG[c.dept]) return false;
-  if (c.types.length && except !== 'type' && !c.types.includes(m.type)) return false;
-  if (c.brands.length && except !== 'brand' && !c.brands.includes(m.brand)) return false;
-  if (c.sizes.length && except !== 'size' && !m.sizes.some((s) => s.qty > 0 && c.sizes.includes(s.size))) return false;
-  if (c.min && except !== 'price' && m.price < c.min) return false;
-  if (c.max && except !== 'price' && m.price > c.max) return false;
+  if (c.dept && !skip(except, 'dept') && m.dept !== DEPT_BY_SLUG[c.dept]) return false;
+  if (c.types.length && !skip(except, 'type') && !c.types.includes(m.type)) return false;
+  if (c.brands.length && !skip(except, 'brand') && !c.brands.includes(m.brand)) return false;
+  if (c.sizes.length && !skip(except, 'size') && !m.sizes.some((s) => s.qty > 0 && c.sizes.includes(s.size))) return false;
+  if (c.min && !skip(except, 'price') && m.price < c.min) return false;
+  if (c.max && !skip(except, 'price') && m.price > c.max) return false;
   if (c.inStock && !m.inStock) return false;
   if (c.sale && !m.oldPrice) return false;
   if (c.keys && !c.keys.has(m.key)) return false;
+  // Характеристики электроники (линейка, память, SIM...): внутри одной - «или», между разными - «и»
+  for (const f of SPEC_FACETS) {
+    const want = c[f.crit];
+    if (want.length && !skip(except, f.param) && !want.includes((m.specs || {})[f.field])) return false;
+  }
   return true;
 }
 
@@ -109,6 +117,7 @@ function normalizeCriteria(raw = {}) {
     max: num(raw.max),
     inStock: raw.all === '1' ? false : true,
     sale: raw.sale === '1',
+    ...Object.fromEntries(SPEC_FACETS.map((f) => [f.crit, arr(raw[f.param]).map((v) => String(v).slice(0, 40)).slice(0, 20)])),
     sort: ['new', 'price_asc', 'price_desc', 'discount', 'popular'].includes(raw.sort) ? raw.sort : 'popular',
     page: Math.max(1, num(raw.page) || 1),
     keys: raw.keys instanceof Set ? raw.keys : null,
@@ -181,6 +190,7 @@ class Catalog {
       if (!m.hideReason && m.noteOnly) m.hideReason = 'note_only'; // все размеры с пометками в артикуле (без коробки, один кроссовок...)
       if (!m.hideReason && !m.price) m.hideReason = 'no_price'; // без цены продавать нельзя
       m.hidden = !!m.hideReason;
+      m.specs = m.dept === 'electronics' ? parseSpecs({ title: m.fullName || m.title, type: m.type }) : {};
       indexModel(m);
       models.push(m);
     }
@@ -257,8 +267,9 @@ class Catalog {
     const items = sorted.slice((page - 1) * pageSize, page * pageSize);
 
     // Счётчики для фильтров считаем без самого фильтра, чтобы можно было расширить выбор
-    const forBrand = base.filter((m) => passes(m, c, 'brand'));
-    const forType = base.filter((m) => passes(m, c, 'type'));
+    // Бренд и тип - «родители» линейки и характеристик: их счётчики не зависят от выбранных характеристик (при смене родителя они сбрасываются)
+    const forBrand = base.filter((m) => passes(m, c, ['brand', ...SPEC_PARAMS]));
+    const forType = base.filter((m) => passes(m, c, ['type', ...SPEC_PARAMS]));
     const forSize = base.filter((m) => passes(m, c, 'size'));
     const forPrice = base.filter((m) => passes(m, c, 'price'));
     const brands = [...countBy(forBrand, (m) => [m.brand])].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
@@ -266,9 +277,17 @@ class Catalog {
     const sizeCounts = countBy(forSize, (m) => m.sizes.filter((s) => s.qty > 0 && s.size).map((s) => s.size));
     const sizes = [...sizeCounts].sort((a, b) => sizeOrderOf(a[0]) - sizeOrderOf(b[0]));
     const prices = forPrice.map((m) => m.price).filter(Boolean);
+    // Характеристики: для каждой считаем без её собственного условия, чтобы выбор можно было расширить. Числовые (128 ГБ, 11″) - по возрастанию.
+    const specs = {};
+    for (const f of SPEC_FACETS) {
+      // линейка - «родитель» остальных характеристик: её счётчики не зависят от них, иначе после выбора eSIM другие линейки пропали бы из списка
+      const counts = [...countBy(base.filter((m) => passes(m, c, f.param === 'fam' ? SPEC_PARAMS : f.param)), (m) => [(m.specs || {})[f.field]])];
+      counts.sort(f.sort === 'num' ? (a, b) => numOf(a[0]) - numOf(b[0]) : (a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]), 'ru'));
+      specs[f.param] = counts;
+    }
     return {
       criteria: c, items, total, page, pages, pageSize,
-      facets: { brands, types, sizes, priceMin: prices.length ? Math.min(...prices) : 0, priceMax: prices.length ? Math.max(...prices) : 0 },
+      facets: { brands, types, sizes, specs, priceMin: prices.length ? Math.min(...prices) : 0, priceMax: prices.length ? Math.max(...prices) : 0 },
     };
   }
 

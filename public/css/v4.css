@@ -599,3 +599,8 @@ a.infocard:hover { border-color: var(--ink); }
   .slide__new { font-size: clamp(30px, 10vw, 44px); }
   .slide--new .slide__copy { padding: 12px 10px; }
 }
+
+/* Шапка закреплена: когда она «прилипла» к верху экрана, её фон продолжается вверх за край экрана (класс is-stuck ставит fx.js).
+   Иначе в Safari на iPhone под полупрозрачной верхней панелью браузера просвечивает прокручиваемая страница. */
+.head::before { content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: 240px; background: var(--night); pointer-events: none; visibility: hidden; }
+.head.is-stuck::before { visibility: visible; }

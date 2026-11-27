@@ -28,6 +28,7 @@ function createPartners(deps) {
     tick: () => primary.tick(),
     verify: (path, source = primary.source) => (get(source) || primary).verify(path),
     fetchImage: async (id, idx) => { const p = await ownerOf(id); return p ? p.fetchImage(id, idx) : null; },
+    imageUrl: async (id, idx) => { const p = await ownerOf(id); return p ? p.imageUrl(id, idx) : ''; },
     refreshDetail: async (id) => { const p = await ownerOf(id); if (p) await p.refreshDetail(id); },
     // Запускает обход каталога: у одного источника или у всех включённых. true - хотя бы один запущен.
     syncNow(source) {

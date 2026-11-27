@@ -51,7 +51,8 @@ function card(m, { priority = false, fav = false } = {}) {
         ${m.cover ? html`<img class="card__img" src="${photoUrl(m.cover, 640)}" srcset="${photoUrl(m.cover, 360)} 360w, ${photoUrl(m.cover, 640)} 640w"
           sizes="(max-width: 720px) 46vw, (max-width: 1100px) 30vw, 300px" alt="${m.title}" width="640" height="640"
           ${priority ? raw('fetchpriority="high"') : raw('loading="lazy" decoding="async"')}>` : ''}
-        ${second ? html`<img class="card__img card__img--alt" src="${photoUrl(second, 640)}" alt="" width="640" height="640" loading="lazy" decoding="async">` : ''}
+        ${second ? html`<img class="card__img card__img--alt" src="${photoUrl(second, 360)}" srcset="${photoUrl(second, 360)} 360w, ${photoUrl(second, 640)} 640w"
+          sizes="(max-width: 720px) 46vw, (max-width: 1100px) 30vw, 300px" alt="" width="640" height="640" loading="lazy" decoding="async">` : ''}
         ${b ? html`<span class="badge badge--${b.kind}">${b.text}</span>` : ''}
         ${quick.length > 1 ? html`<span class="card__quick" aria-hidden="true">${quick.slice(0, 9).map((x) => html`<i>${x}</i>`)}${quick.length > 9 ? html`<i>+${quick.length - 9}</i>` : ''}</span>` : ''}
       </div>
@@ -158,8 +159,13 @@ function mapBlock(ctx, { force = false } = {}) {
         <a class="btn btn--glass" href="${m.open}" rel="noopener" target="_blank">Открыть в Яндекс Картах</a>
       </div>
     </div>
-    <div class="where__map">
-      <iframe src="${m.src}" title="Магазин на Яндекс Картах" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+    <div class="where__map" data-map data-map-src="${m.src}">
+      <div class="where__ph">
+        <span class="where__pin">${icon('pin')}</span>
+        ${s.address ? html`<p>${s.address}</p>` : ''}
+        <button class="btn btn--light" type="button" data-map-load>Показать карту</button>
+        <noscript><a class="btn btn--light" href="${m.open}" rel="noopener" target="_blank">Открыть в Яндекс Картах</a></noscript>
+      </div>
     </div>
   </section>`;
 }

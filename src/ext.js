@@ -87,8 +87,9 @@ function buildExtModels(rows, { markupPct = 0, baseUrl = '', showOldPrice = fals
     // Зачёркнутая цена партнёра показывается как скидка только если владелец это включил в админке: настоящая ли это скидка, мы не знаем
     const oldPrice = showOldPrice && !ownPrice && r.old_price && Number(r.old_price) > Number(r.price) ? markup(r.old_price, pct) : 0;
     const discount = oldPrice ? Math.max(1, Math.min(99, Math.round((1 - price / oldPrice) * 100))) : 0;
-    const images = Array.isArray(r.images) ? r.images.slice(0, 8) : [];
-    const photos = images.map((_, i) => extPhoto(r.id, i));
+    // Каталогу нужно только число фото (сами адреса не нужны): из базы приходит image_count, а целый список images - необязательно
+    const count = Number.isInteger(r.image_count) ? r.image_count : (Array.isArray(r.images) ? Math.min(r.images.length, 8) : 0);
+    const photos = Array.from({ length: count }, (_, i) => extPhoto(r.id, i));
     const brand = r.brand || detectBrand(r.title, r.section) || detectBrand(r.section);
     const model = brand && String(r.title).toLowerCase().includes(brand.toLowerCase()) ? String(r.title).replace(new RegExp(brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), '').replace(/\s+/g, ' ').trim() : String(r.title);
     const inStock = Boolean(r.in_stock);

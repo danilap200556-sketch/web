@@ -6,6 +6,7 @@
 // Фон у фото из разных магазинов разный: чисто белый, серый, кремовый. Чтобы на карточках не было «рамок»,
 // цвет фона читается по углам снимка, и если он светлый и ровный, фон приводится к белому (дальше CSS
 // накладывает его на цвет карточки режимом multiply, и фото сливается с карточкой).
+const crypto = require('node:crypto');
 const sharp = require('sharp');
 const { studio } = require('./photofix');
 const { OWN_BASE } = require('./ext');
@@ -71,7 +72,7 @@ async function analyse(data) {
   }
 }
 
-function createMedia(db, { partner, studio: useStudio = true } = {}) {
+function createMedia(db, { partner, studio: useStudio = true, disk = null } = {}) {
   const cache = new ByteLru(MAX_BYTES);
   const inflight = new Map();
   const infoCache = new Map(); // id фото -> { gain, clean }
@@ -101,6 +102,21 @@ function createMedia(db, { partner, studio: useStudio = true } = {}) {
     return (await info(id)).clean;
   }
 
+  // Готовые файлы лежат ещё и на диске (см. mediacache.js): после перезапуска сайта фото не обрабатываются заново.
+  // Имя файла включает размер, формат, версию вида (LOOK) и режим обработки: смена любого из них даёт новый файл.
+  const sha = (url) => crypto.createHash('sha1').update(String(url)).digest('hex').slice(0, 14);
+  const diskOn = () => Boolean(disk && disk.enabled());
+  const flavor = (w, webp) => `${w}_${webp ? 'w' : 'j'}_${LOOK}${useStudio ? 's' : 'n'}.${webp ? 'webp' : 'jpg'}`;
+  async function viaDisk(name, webp, make) {
+    if (diskOn()) {
+      const buf = await disk.get(name);
+      if (buf) return { buf, type: webp ? 'image/webp' : 'image/jpeg', at: Date.now() };
+    }
+    const out = await make();
+    if (out && diskOn()) disk.set(name, out.buf).catch(() => {});      // запись на диск ответ не задерживает
+    return out;
+  }
+
   async function render(id, w, webp) {
     const data = await load(id);
     if (!data) return null;
@@ -114,16 +130,29 @@ function createMedia(db, { partner, studio: useStudio = true } = {}) {
     return { buf: await img.toBuffer(), type: webp ? 'image/webp' : 'image/jpeg' };
   }
 
-  // Фото товара партнёра: скачивается с их сайта, сжимается и держится в памяти час (список фото карточки может обновиться)
+  // Фото товара партнёра: скачивается с их сайта, сжимается и держится в памяти час (список фото карточки может обновиться).
+  // Скачанный оригинал и готовые файлы лежат на диске: один оригинал обслуживает все размеры и форматы, а после перезапуска
+  // сайта ничего не нужно скачивать и обрабатывать заново. Имя файла включает адрес картинки: сменилась картинка - новый файл.
   async function renderExt(id, idx, w, webp) {
-    const src = partner ? await partner.fetchImage(id, idx) : null;
-    if (!src) return null;
-    if (useStudio) {
-      try { return { ...(await studio(src.buf, w, webp)), at: Date.now() }; } catch { /* ниже обычная обработка */ }
-    }
-    let img = sharp(src.buf).rotate().flatten({ background: '#ffffff' }).resize({ width: w, withoutEnlargement: true });
-    img = webp ? img.webp({ quality: 80 }) : img.jpeg({ quality: 82, mozjpeg: true });
-    return { buf: await img.toBuffer(), type: webp ? 'image/webp' : 'image/jpeg', at: Date.now() };
+    const url = partner && partner.imageUrl ? await partner.imageUrl(id, idx) : '';
+    const make = async () => {
+      let buf = null;
+      const origName = url ? `o_${sha(url)}.bin` : '';
+      if (origName && diskOn()) buf = await disk.get(origName);
+      if (!buf) {
+        const src = partner ? await partner.fetchImage(id, idx) : null;
+        if (!src) return null;
+        buf = src.buf;
+        if (origName && diskOn()) disk.set(origName, buf).catch(() => {});
+      }
+      if (useStudio) {
+        try { return { ...(await studio(buf, w, webp)), at: Date.now() }; } catch { /* ниже обычная обработка */ }
+      }
+      let img = sharp(buf).rotate().flatten({ background: '#ffffff' }).resize({ width: w, withoutEnlargement: true });
+      img = webp ? img.webp({ quality: 80 }) : img.jpeg({ quality: 82, mozjpeg: true });
+      return { buf: await img.toBuffer(), type: webp ? 'image/webp' : 'image/jpeg', at: Date.now() };
+    };
+    return url ? viaDisk(`x${id}_${idx}_${sha(url)}_${flavor(w, webp)}`, webp, make) : make();
   }
 
   function mount(app) {
@@ -159,7 +188,7 @@ function createMedia(db, { partner, studio: useStudio = true } = {}) {
       if (!hit) {
         let p = inflight.get(key);
         if (!p) {
-          p = render(id, w, webp).finally(() => inflight.delete(key));
+          p = viaDisk(`p${id}_${flavor(w, webp)}`, webp, () => render(id, w, webp)).finally(() => inflight.delete(key));
           inflight.set(key, p);
         }
         try { hit = await p; } catch (e) { console.error('[media]', e.message); return res.status(500).end(); }
@@ -170,7 +199,7 @@ function createMedia(db, { partner, studio: useStudio = true } = {}) {
     });
   }
 
-  return { mount, isClean, analyse };
+  return { mount, isClean, analyse, dropMemory: () => { cache.map.clear(); cache.size = 0; infoCache.clear(); } };
 }
 
 module.exports = { createMedia, analyse, LOOK };

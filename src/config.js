@@ -62,6 +62,8 @@ function load(env = process.env) {
     },
     // Единый вид фото (квадрат, белый фон, товар по центру). PHOTO_STUDIO=off отдаёт фото как есть.
     photoStudio: env.PHOTO_STUDIO !== 'off',
+    // Кэш готовых фото на диске: после обновления сайта фото не обрабатываются заново. Папка (в docker это отдельный том) и размер, МБ.
+    mediaCache: { dir: (env.MEDIA_CACHE_DIR || '').trim(), maxMb: intEnv(env.MEDIA_CACHE_MAX_MB, 1024) },
     // Каталог электроники партнёра (Sergeev Electronics). По умолчанию включён на боевом сервере, в разработке и тестах выключен.
     // PARTNER_SYNC=off выключает; PARTNER_SECTIONS - список разделов партнёра через запятую; PARTNER_DELAY_MS - пауза между запросами к их сайту.
     partner: {

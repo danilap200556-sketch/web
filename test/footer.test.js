@@ -20,7 +20,11 @@ test.describe('подвал как у больших магазинов, Янд�
     assert.match(r.headers.get('content-security-policy'), /frame-src https:\/\/yandex\.ru;/);
     const t = r.text;
     assert.match(t, /<section class="where"/);
-    assert.match(t, /<iframe src="https:\/\/yandex\.ru\/map-widget\/v1\/\?text=[^"]+" title="Магазин на Яндекс Картах" loading="lazy"/);
+    // Карта Яндекса тянет около 5 МБ и тормозит страницы, поэтому на странице заглушка, а сам фрейм создаёт shop.js по кнопке
+    assert.doesNotMatch(t, /<iframe/, 'пока не нажали «Показать карту», фрейма на странице нет');
+    assert.match(t, /<div class="where__map" data-map data-map-src="https:\/\/yandex\.ru\/map-widget\/v1\/\?text=[^"]+">/);
+    assert.match(t, /<button class="btn btn--light" type="button" data-map-load>Показать карту<\/button>/);
+    assert.match(t, /<noscript><a class="btn btn--light" href="https:\/\/yandex\.ru\/maps\/\?text=/, 'без JS - ссылка на Яндекс Карты');
     assert.match(t, /class="pbadge pbadge--mir"/);
     assert.match(t, /class="pbadge pbadge--cdek"/);
     assert.doesNotMatch(t, /Социальные сети/, 'соцсетей нет - нет и колонки');

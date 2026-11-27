@@ -137,17 +137,39 @@ class Catalog {
     this.byProduct = new Map();
     this.loadedAt = 0;
     this.pending = null;
+    this.dirty = false;   // после правки (заказ, цена в админке) данные надо перечитать до ответа
+    this.gen = 0;         // номер правки: загрузка, начатая до неё, данные «после правки» не обеспечивает
+    this.retryAt = 0;     // после неудачного фонового обновления следующая попытка не раньше этого времени
     this.deptSlugs = new Map(Object.entries(DEPARTMENTS).map(([k, v]) => [v.slug, k]));
   }
 
-  invalidate() { this.loadedAt = 0; }
+  invalidate() { this.dirty = true; this.gen++; }
+
+  // Данные для страниц. Устарели только по времени (TTL) - отдаём прежний каталог сразу, а перечитываем в фоне: иначе раз в TTL один из
+  // посетителей (и все, кто пришёл следом) ждал бы полной загрузки каталога из базы. После правки (invalidate) или при первой загрузке
+  // запрос дожидается свежих данных.
+  startRefresh() {
+    const gen = this.gen;
+    const p = this.load().then(() => { if (gen === this.gen) this.dirty = false; });
+    this.pending = p;
+    const clear = () => { if (this.pending === p) this.pending = null; };
+    p.then(clear, clear);
+    return p;
+  }
 
   async ensure() {
-    if (Date.now() - this.loadedAt < this.ttl && this.loadedAt) return;
-    if (!this.pending) {
-      this.pending = this.load().finally(() => { this.pending = null; });
+    for (;;) {
+      const have = this.loadedAt > 0;
+      if (have && !this.dirty && Date.now() - this.loadedAt < this.ttl) return;
+      if (have && !this.dirty && this.ttl > 0) {      // устарел только по времени (при нулевом сроке, как в тестах, всегда ждём свежих данных)
+        if (!this.pending && Date.now() >= this.retryAt) {
+          this.startRefresh().catch((e) => { this.retryAt = Date.now() + 5000; console.warn(`[catalog] фоновое обновление каталога не удалось, пока показываем прежний: ${e.message}`); });
+        }
+        return;
+      }
+      await (this.pending || this.startRefresh());
+      if (!this.dirty) return;                         // пока ждали, мог прийти invalidate(): тогда ещё круг
     }
-    await this.pending;
   }
 
   async load() {

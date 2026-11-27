@@ -6,8 +6,10 @@ services:
     env_file: .env
     environment:
       TRUST_PROXY: "1"          # перед сайтом стоит Caddy
+      MEDIA_CACHE_DIR: /cache/media   # готовые фото лежат на диске и переживают обновление сайта
     volumes:
       - ./certs:/certs:ro       # сертификат Яндекса (root.crt) для DB_SSL=verify
+      - media_cache:/cache      # кэш готовых фото (до 1 ГБ, лишнее удаляется само)
     expose:
       - "3000"
 
@@ -27,3 +29,4 @@ services:
 
 volumes:
   caddy_data:
+  media_cache:

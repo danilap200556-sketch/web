@@ -345,6 +345,13 @@ function createPartner({ db, cfg, fetchImpl = fetch, sleep = sleepReal, log = co
     }
   }
 
+  // Адрес картинки товара (только с сайта партнёра): по нему кэш фото на диске понимает, что картинка не менялась
+  async function imageUrl(id, idx) {
+    const { rows } = await db.query('SELECT images FROM webshop.ext_products WHERE id = $1 AND source = $2', [id, source]);
+    const url = rows[0] && Array.isArray(rows[0].images) ? rows[0].images[idx] : '';
+    try { return url && new URL(url).origin === new URL(base).origin ? String(url) : ''; } catch { return ''; }
+  }
+
   // Фото: только с сайта партнёра (другие адреса не качаем), через простую очередь на 3 одновременных загрузки
   async function fetchImage(id, idx) {
     const { rows } = await db.query('SELECT images FROM webshop.ext_products WHERE id = $1 AND source = $2', [id, source]);
@@ -377,7 +384,7 @@ function createPartner({ db, cfg, fetchImpl = fetch, sleep = sleepReal, log = co
 
   async function rows() {
     const r = await db.query(
-      `SELECT e.id, e.source, e.path, e.section, e.title, e.brand, e.price, e.old_price, e.in_stock, e.images, e.created_at,
+      `SELECT e.id, e.source, e.path, e.section, e.title, e.brand, e.price, e.old_price, e.in_stock, LEAST(jsonb_array_length(e.images), 8)::int AS image_count, e.created_at,
               p.buy_price, p.markup_pct, p.manual_price
          FROM webshop.ext_products e LEFT JOIN webshop.ext_prices p ON p.ext_id = e.id
         WHERE e.source = $1 AND e.seen_at > NOW() - INTERVAL '3 days' AND (e.price > 0 OR p.manual_price > 0) ORDER BY e.id`, [source]);
@@ -406,7 +413,7 @@ function createPartner({ db, cfg, fetchImpl = fetch, sleep = sleepReal, log = co
   }
 
   return {
-    enabled, source, name: profile.name, rows, description, status, verify, fetchImage, refreshDetail, syncListings, syncDetails, tick, base,
+    enabled, source, name: profile.name, rows, description, status, verify, fetchImage, imageUrl, refreshDetail, syncListings, syncDetails, tick, base,
     syncNow() { if (enabled() && !state.running) { syncListings(); return true; } return false; },
     start({ intervalMs = 60_000, firstMs = 20_000 } = {}) {
       if (!enabled() || c.autostart === false || state.timer) return;

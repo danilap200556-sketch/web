@@ -1,4 +1,4 @@
 {$SITE_ADDRESS} {
-	encode gzip
+	encode zstd gzip
 	reverse_proxy shop:3000
 }

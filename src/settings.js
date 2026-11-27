@@ -71,9 +71,11 @@ function createSettings(db, cfg) {
          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`, [k, JSON.stringify(v)]);
     }
     cache = null;
+    if (api.onChange) api.onChange();   // настройки влияют на каталог (наценка, сезон, «только с фото»): он перечитается до следующего ответа
   }
 
-  return { get, set, defaults: base, invalidate: () => { cache = null; } };
+  const api = { get, set, defaults: base, invalidate: () => { cache = null; }, onChange: null };
+  return api;
 }
 
 module.exports = { createSettings };

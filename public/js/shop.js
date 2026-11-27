@@ -25,6 +25,21 @@
     window.matchMedia('(min-width: 901px)').addEventListener('change', (e) => { if (e.matches) setDrawer(false); });
   }
 
+  /* ---------- Карта: загружается только по кнопке ----------
+     Виджет Яндекс Карт тянет около 5 МБ (страница, скрипты, плитки) и сильно тормозит телефон, поэтому до нажатия на странице только заглушка. */
+  $$('[data-map]').forEach((box) => {
+    const btn = $('[data-map-load]', box);
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      const f = el('iframe');
+      f.src = box.dataset.mapSrc;
+      f.title = 'Магазин на Яндекс Картах';
+      f.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+      f.setAttribute('allowfullscreen', '');
+      box.replaceChildren(f);
+    });
+  });
+
   /* ---------- Подсказки поиска ---------- */
   function renderSuggest(out, data, q, compact) {
     out.replaceChildren();

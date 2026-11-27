@@ -13,6 +13,7 @@ const { createNotifier } = require('./notify');
 const { createCarriers } = require('./carriers');
 const { createPayments } = require('./payments');
 const { createPartners } = require('./partners');
+const { createDiskCache } = require('./mediacache');
 const { createAccounts } = require('./accounts');
 const { createSessions } = require('./customer-sessions');
 const { createCodes } = require('./auth-codes');
@@ -40,10 +41,13 @@ function createApp(cfg, db, opts = {}) {
   const partner = createPartners({ db, cfg, fetchImpl: opts.fetchImpl, sleep: opts.sleep });
   const catalog = new Catalog(db, cfg, settings);
   catalog.partner = partner;
+  settings.onChange = () => catalog.invalidate();
   const delivery = createDelivery(db);
   const carts = createCarts(db);
   const tracker = createTracker(db, cfg);
-  const media = createMedia(db, { partner, studio: cfg.photoStudio });
+  const mediaDisk = createDiskCache({ dir: cfg.mediaCache.dir, maxBytes: cfg.mediaCache.maxMb * 1024 * 1024 });
+  mediaDisk.start();
+  const media = createMedia(db, { partner, studio: cfg.photoStudio, disk: mediaDisk });
   const heroMedia = createHeroMedia({ db, settings });
   const logo = createLogo({ db, settings });
   const pages = createPages(db);
@@ -77,7 +81,8 @@ function createApp(cfg, db, opts = {}) {
   });
 
   app.get('/healthz', (req, res) => res.type('text').send('ok'));
-  app.use('/static', express.static(path.join(__dirname, '..', 'public'), { maxAge: cfg.prod ? '7d' : 0, index: false }));
+  // Адреса скриптов и стилей содержат версию (?v=), она меняется при каждом обновлении сайта, поэтому их можно кэшировать надолго без перепроверки
+  app.use('/static', express.static(path.join(__dirname, '..', 'public'), { maxAge: cfg.prod ? '7d' : 0, immutable: cfg.prod, index: false }));
   media.mount(app);
   heroMedia.mount(app);
   logo.mount(app);
@@ -193,7 +198,7 @@ function createApp(cfg, db, opts = {}) {
     res.status(500).type('text').send('Что-то пошло не так. Попробуйте ещё раз через минуту.');
   });
 
-  app.locals.shutdown = async () => { writeoff.stop(); await notifier.stop(); await bot.stop(); await partner.stop(); await tracker.flush(); };
+  app.locals.shutdown = async () => { mediaDisk.stop(); writeoff.stop(); await notifier.stop(); await bot.stop(); await partner.stop(); await tracker.flush(); };
   return app;
 }
 

@@ -4,6 +4,7 @@
 // опубликованным сеткам (страницы брендов закрыты для автоматического чтения, поэтому сверьте их при случае). Остальные бренды
 // получают универсальную таблицу с пометкой: размеры у каждого бренда могут отличаться на пол-размера.
 const { html, raw } = require('./html');
+const { icon } = require('./icons');
 
 const zip = (eu, usM, usW, uk, cm) => eu.map((e, i) => ({ eu: e, usM: usM[i], usW: usW[i], uk: uk[i], cm: cm[i] }));
 const w = (s) => s.split(/\s+/);
@@ -85,17 +86,46 @@ function apparelTable(rows) {
 
 const HOW_TO = 'Встаньте на лист бумаги, отметьте самую дальнюю точку большого пальца и пятку, измерьте расстояние линейкой в сантиметрах. Лучше мерить вечером и прибавить 0,5-1 см запаса.';
 
-// Раскрывающийся блок в карточке товара: обувь - таблица бренда с подсветкой размеров в наличии, одежда - мерки; иначе пусто
+// Размеры в окне показываем по-русски: запятая вместо точки (40,5)
+const comma = (v) => String(v).replace('.', ',');
+// Строки «Соответствие размеров» для выбранного европейского размера. В российской рознице размер RU совпадает с EU, французский (парижский) тоже;
+// у отдельных брендов (старые партии, детская обувь) RU может отличаться, поэтому в окне есть пометка и длина стопы в сантиметрах.
+const CONV = [['ru', 'Российский (RU)'], ['us-m', 'Американский (US), мужской'], ['us-w', 'Американский (US), женский'], ['uk', 'Английский (UK)'], ['fr', 'Французский (FR)'], ['cm', 'Длина стопы, см']];
+const convOf = (r) => ({ ru: comma(r.eu), 'us-m': comma(r.usM), 'us-w': comma(r.usW), uk: comma(r.uk), fr: comma(r.eu), cm: comma(r.cm) });
+
+// Кнопка у выбора размера: открывает окно с таблицей (сам блок окна - в guideBlock)
+const sizeGuideButton = () => html`<button class="sizelink sizelink--btn" type="button" data-sizeguide-open aria-haspopup="dialog">Таблица размеров</button>`;
+
+// Окно «Таблица размеров» для обуви: сетка европейских размеров бренда (тёмная рамка - есть в наличии), под ней соответствия размеров других стран
+// для выбранного. Открывается и работает скриптом (public/js/shop.js), а «Готово» выбирает размер в карточке.
+function shoeSheet(chart, have = []) {
+  const mine = new Set(have.map(parseEu).filter((x) => Number.isFinite(x)).map((x) => Math.round(x * 100)));
+  const cell = (r) => {
+    const c = convOf(r);
+    const avail = mine.has(Math.round(parseEu(r.eu) * 100));
+    return html`<button class="sz${avail ? ' is-have' : ''}" type="button" data-sz data-eu="${r.eu}" data-have="${avail ? 1 : 0}" ${raw(CONV.map(([k]) => `data-${k}="${String(c[k]).replace(/[^0-9a-zA-Z,./ -]/g, '')}"`).join(' '))} aria-pressed="false" aria-label="Размер ${comma(r.eu)}${avail ? ', есть в наличии' : ''}">${comma(r.eu)}</button>`;
+  };
+  return html`<dialog class="sizesheet" data-sizesheet aria-labelledby="sizesheet-title"><div class="sizesheet__box">
+    <button class="iconbtn sizesheet__x" type="button" data-sizesheet-close aria-label="Закрыть">${icon('close')}</button>
+    <div class="sizesheet__body">
+      <h2 id="sizesheet-title" class="sizesheet__title">Таблица размеров</h2>
+      <p class="sizesheet__sub">Выберите ваш размер и мы покажем соответствия подходящего размера других стран</p>
+      <h3 class="sizesheet__h">Европейский - EU</h3>
+      <div class="sizesheet__grid" role="group" aria-label="Европейский размер, EU">${chart.rows.map(cell)}</div>
+      <p class="sizesheet__legend"><i class="sizesheet__key"></i> тёмная рамка: размер есть в наличии</p>
+      <h3 class="sizesheet__h">Соответствие размеров</h3>
+      <dl class="sizesheet__conv" data-sizesheet-conv>${CONV.map(([k, t]) => html`<div><dt>${t}</dt><dd data-conv="${k}">-</dd></div>`)}</dl>
+      <p class="sizesheet__state" data-sizesheet-state aria-live="polite"></p>
+      <p class="sizesheet__note"><b>${chart.title}</b> · ${chart.source}. ${chart.note} ${HOW_TO}</p>
+      <p class="sizesheet__all"><a href="/razmery">Все таблицы размеров</a></p>
+    </div>
+    <div class="sizesheet__foot"><button class="btn btn--lg btn--block sizesheet__done" type="button" data-sizesheet-done>Готово</button></div>
+  </div></dialog>`;
+}
+
+// Блок в карточке товара: обувь - окно с таблицей (открывается кнопкой у выбора размера), одежда - раскрывающийся блок с мерками; иначе пусто
 function guideBlock({ brand, dept, sizes = [] }) {
-  if (dept === 'shoes') {
-    const chart = chartFor(brand);
-    return html`<details class="acc sizeguide"><summary>Таблица размеров</summary><div class="acc__body">
-      <p><b>${chart.title}</b> <span class="muted">· ${chart.source}</span></p>
-      ${shoeTable(chart, sizes)}
-      <p class="muted">Строки с цветным фоном - размеры, которые сейчас есть в наличии. ${chart.note}</p>
-      <p class="muted">${HOW_TO}</p>
-      <p><a href="/razmery">Все таблицы размеров</a></p></div></details>`;
-  }
+  if (dept === 'shoes') return shoeSheet(chartFor(brand), sizes);
   if (dept === 'clothes') {
     return html`<details class="acc sizeguide"><summary>Таблица размеров</summary><div class="acc__body">
       <p><b>Женская одежда</b></p>${apparelTable(APPAREL.women)}
@@ -121,4 +151,4 @@ function guidePage() {
   </section>`;
 }
 
-module.exports = { CHARTS, APPAREL, chartFor, parseEu, guideBlock, guidePage, shoeTable };
+module.exports = { CHARTS, APPAREL, CONV, chartFor, parseEu, guideBlock, guidePage, shoeTable, shoeSheet, sizeGuideButton };

@@ -73,24 +73,44 @@ test.describe('таблицы размеров в магазине', () => {
   });
   test.after(async () => { await shop.stop(); });
 
-  test('карточка обуви: таблица бренда внутри карточки, доступные размеры подсвечены', async () => {
+  test('карточка обуви: кнопка у выбора размера и окно с сеткой EU бренда, размеры в наличии помечены', async () => {
     const page = await get(`/p/${nikeSlug}`);
-    assert.match(page, /<details class="acc sizeguide"[^>]*><summary>Таблица размеров<\/summary>/);
+    assert.match(page, /<button class="sizelink sizelink--btn" type="button" data-sizeguide-open[^>]*>Таблица размеров<\/button>/);
+    assert.match(page, /<dialog class="sizesheet" data-sizesheet/);
+    assert.match(page, /Выберите ваш размер и мы покажем соответствия подходящего размера других стран/);
+    assert.match(page, /Европейский - EU/);
     assert.match(page, /Nike и Jordan/);
-    assert.match(page, /<tr class="is-have"><th scope="row">42<\/th>/, 'размер 42 есть в наличии');
-    assert.doesNotMatch(page, /<tr class="is-have"><th scope="row">43<\/th>/, 'размер 43 раскуплен');
-    assert.match(page, /<th>US \(муж\.\)<\/th>/);
+    const cell = (eu) => new RegExp(`<button class="sz( is-have)?" type="button" data-sz data-eu="${eu}" data-have="([01])"[^>]*>`).exec(page);
+    assert.equal(cell('42')[2], '1', 'размер 42 есть в наличии');
+    assert.match(cell('42')[0], /class="sz is-have"/);
+    assert.equal(cell('43')[2], '0', 'размер 43 раскуплен');
+    assert.doesNotMatch(cell('43')[0], /is-have/);
+    assert.equal((page.match(/<button class="sz[ "]/g) || []).length, CHARTS[0].rows.length, 'в сетке все размеры таблицы бренда');
     assert.match(page, /href="\/razmery"/);
+    assert.doesNotMatch(page, /<summary>Таблица размеров<\/summary>[\s\S]*Nike и Jordan/, 'старой раскрывающейся таблицы у обуви больше нет');
   });
 
-  test('у adidas своя таблица с дробными EU, у неизвестного бренда универсальная с пометкой', async () => {
+  test('соответствия размеров: RU, US (муж. и жен.), UK, FR и длина стопы лежат в самой плитке, дробные EU у adidas читаются', async () => {
+    const nike = await get(`/p/${nikeSlug}`);
+    const c42 = /<button class="sz[^"]*" type="button" data-sz data-eu="42"[^>]*>/.exec(nike)[0];
+    for (const [k, v] of [['ru', '42'], ['us-m', '8,5'], ['us-w', '10'], ['uk', '7,5'], ['fr', '42'], ['cm', '26,5']]) assert.ok(c42.includes(`data-${k}="${v}"`), `${k}=${v} в ${c42}`);
+    for (const t of ['Российский (RU)', 'Американский (US), мужской', 'Американский (US), женский', 'Английский (UK)', 'Французский (FR)', 'Длина стопы, см']) assert.ok(nike.includes(t), t);
+    assert.match(nike, /<button class="sz" type="button" data-sz data-eu="35.5"[^>]*>35,5<\/button>/, 'в подписи плитки запятая, как принято по-русски');
     const ad = await get(`/p/${adidasSlug}`);
-    assert.match(ad, /<summary>Таблица размеров<\/summary>[\s\S]*adidas/);
-    assert.match(ad, /<th scope="row">41 1\/3<\/th>/);
-    assert.match(ad, /<tr class="is-have"><th scope="row">42<\/th>/);
+    assert.match(ad, /data-eu="41 1\/3"/);
+    assert.match(ad, /<button class="sz is-have" type="button" data-sz data-eu="42" data-have="1"/);
+  });
+
+  test('у неизвестного бренда универсальная таблица с пометкой, окно открывается и у него', async () => {
     const ugg = await get(`/p/${uggSlug}`);
+    assert.match(ugg, /data-sizesheet/);
     assert.match(ugg, /Универсальная таблица/);
     assert.match(ugg, /у UGG размеры могут отличаться/i);
+  });
+
+  test('окно есть только у обуви: у одежды прежний блок мерок, у аксессуаров ничего', async () => {
+    assert.doesNotMatch(await get(`/p/${shirtSlug}`), /data-sizesheet|data-sizeguide-open/);
+    assert.doesNotMatch(await get(`/p/${capSlug}`), /data-sizesheet|data-sizeguide-open/);
   });
 
   test('одежда: таблица мерок, аксессуары и электроника без таблицы', async () => {

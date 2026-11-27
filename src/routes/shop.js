@@ -6,7 +6,7 @@ const { DEPARTMENTS } = require('../model');
 const { SEASONS, heroFor, seasonPicks } = require('../seasons');
 const { card, pagination, photoUrl, countLabel, priceBlock, favBtn, favSlugs, telegramUrl, mapBlock, SEASON_ICON } = require('../shopviews');
 const { socialList, renderText } = require('../site');
-const { guideBlock, guidePage } = require('../sizecharts');
+const { guideBlock, guidePage, sizeGuideButton } = require('../sizecharts');
 const { quote, PAY_METHODS } = require('../delivery');
 
 const SIZES_QUICK = ['36', '37', '38', '39', '40', '41', '42', '43', '44', '45', '46'];
@@ -509,7 +509,8 @@ module.exports = function mount(app, { catalog, tracker, cfg, media, partner, pa
             <div class="sizes sizes--pdp" role="radiogroup" aria-label="Размер">
               ${m.sizes.map((s) => html`<label class="size${s.qty > 0 ? '' : ' is-off'}" title="${s.qty > 0 ? (s.qty <= 2 ? 'Осталось ' + s.qty + ' шт.' : 'В наличии') : 'Нет в наличии'}">
                 <input type="radio" name="pid" value="${s.id}" ${s.qty > 0 ? '' : raw('disabled')} data-size-label="${s.label}" data-left="${s.qty}" required><span>${s.label}</span></label>`)}
-            </div>`}
+            </div>
+            ${m.dept === 'shoes' ? html`<div class="buy__sizeguide">${sizeGuideButton()}</div>` : ''}`}
             <div class="buy__row">
               <button class="btn btn--lg btn--block" type="submit" ${m.inStock ? '' : raw('disabled')} data-add-btn>${m.inStock ? html`${icon('bag')} Добавить в корзину` : 'Нет в наличии'}</button>
               ${favBtn(m, favSlugs(req).includes(m.slug), 'fav fav--lg')}

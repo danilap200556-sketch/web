@@ -32,3 +32,45 @@
 
 /* Вторая фото карточки показывается только при наведении мыши: на телефонах (наведения нет) она скрыта, и браузер её не загружает */
 @media (hover: none) { .card__img--alt { display: none; } }
+
+/* Окно «Таблица размеров» у обуви: на телефоне поднимается снизу, на компьютере по центру */
+.buy__sizeguide { margin: -10px 0 22px; }
+.sizelink--btn { margin: 0; padding: 0; background: none; border: 0; border-bottom: 1.5px solid var(--ink); border-radius: 0; color: var(--ink); cursor: pointer; font-family: inherit; line-height: 1.3; }
+.sizesheet { padding: 0; border: 0; background: var(--surface); color: var(--ink); width: min(480px, 100%); max-width: 100%; max-height: 92vh; max-height: 92dvh; margin: auto; border-radius: 22px; overflow: hidden; box-shadow: 0 30px 80px -20px rgb(0 0 0 / .45); }
+.sizesheet::backdrop { background: rgb(15 12 10 / .5); }
+.sizesheet__box { position: relative; display: flex; flex-direction: column; max-height: 92vh; max-height: 92dvh; }
+.sizesheet__body { flex: 1 1 auto; min-height: 0; padding: 26px clamp(20px, 5vw, 32px) 8px; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.sizesheet__foot { flex: none; padding: 12px clamp(20px, 5vw, 32px) calc(16px + env(safe-area-inset-bottom, 0px)); background: var(--surface); border-top: 1px solid var(--line); }
+.sizesheet__x { position: absolute; top: 14px; right: 14px; }
+.sizesheet__title { margin: 0 40px 6px 0; font-size: 22px; line-height: 1.2; font-weight: 750; }
+.sizesheet__sub { margin: 0 0 26px; font-size: 14px; line-height: 1.4; color: var(--muted); }
+.sizesheet__h { margin: 0 0 16px; font-size: 14.5px; font-weight: 750; }
+.sizesheet__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 8px; }
+.sz { aspect-ratio: 1; min-width: 0; padding: 0 2px; display: grid; place-items: center; background: var(--surface); color: var(--ink); border: 1.5px solid var(--line); border-radius: 8px; font-family: inherit; font-size: 15px; font-weight: 500; line-height: 1; font-variant-numeric: tabular-nums; cursor: pointer; transition: background .15s, color .15s, border-color .15s; -webkit-tap-highlight-color: transparent; }
+.sz.is-have { border-color: var(--ink); }
+@media (hover: hover) { .sz:hover { border-color: var(--ink); } }
+.sz[aria-pressed='true'] { background: var(--ink); border-color: var(--ink); color: #fff; }
+.sz:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sizesheet__legend { display: flex; align-items: center; gap: 8px; margin: 12px 0 28px; font-size: 12.5px; color: var(--muted); }
+.sizesheet__key { flex: none; width: 14px; height: 14px; border: 1.5px solid var(--ink); border-radius: 4px; }
+.sizesheet__conv { margin: 0 0 8px; }
+.sizesheet__conv div { display: flex; justify-content: space-between; gap: 16px; padding: 15px 0; border-bottom: 1px solid var(--line); font-size: 15px; }
+.sizesheet__conv dt { color: var(--ink); }
+.sizesheet__conv dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+.sizesheet__state { min-height: 20px; margin: 10px 0 0; font-size: 13.5px; font-weight: 600; color: var(--ink-2); }
+.sizesheet__state.is-off { color: var(--bad, #b3261e); }
+.sizesheet__note { margin: 8px 0 12px; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
+.sizesheet__done { border-radius: 12px; }
+.sizesheet__done.is-muted { background: color-mix(in srgb, var(--ink) 22%, var(--surface)); color: #fff; }
+.sizesheet__all { margin: 0 0 8px; text-align: center; font-size: 13.5px; }
+.sizesheet__all a { border-bottom: 1.5px solid var(--line); font-weight: 600; }
+@media (max-width: 600px) {
+  .sizesheet { width: 100%; max-width: 100%; margin: auto 0 0; border-radius: 22px 22px 0 0; max-height: 94vh; max-height: 94dvh; }
+  .sizesheet__box { max-height: 94vh; max-height: 94dvh; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sizesheet[open] { animation: sheet-in .28s cubic-bezier(.2, .8, .2, 1); }
+  .sizesheet[open]::backdrop { animation: sheet-fade .28s ease; }
+}
+@keyframes sheet-in { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+@keyframes sheet-fade { from { opacity: 0; } to { opacity: 1; } }

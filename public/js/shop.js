@@ -188,6 +188,57 @@
     });
   }
 
+  /* ---------- Таблица размеров обуви: окно с сеткой EU и соответствиями размеров других стран ---------- */
+  const sheet = $('[data-sizesheet]');
+  if (sheet) {
+    const parseEu = (v) => {
+      const t = String(v == null ? '' : v).trim().replace(',', '.');
+      const m = /^(\d+)\s+(\d+)\/(\d+)$/.exec(t);
+      if (m) return Number(m[1]) + Number(m[2]) / Number(m[3]);
+      return /^\d+(\.\d+)?$/.test(t) ? Number(t) : NaN;
+    };
+    const keyOf = (v) => Math.round(parseEu(v) * 100);
+    const cells = $$('[data-sz]', sheet);
+    const stateEl = $('[data-sizesheet-state]', sheet);
+    const doneBtn = $('[data-sizesheet-done]', sheet);
+    const buyForm = $('[data-add-form]');
+    const radios = buyForm ? $$('input[name="pid"]', buyForm) : [];
+    let current = null;
+    const radioFor = (cell) => radios.find((r) => !r.disabled && keyOf(r.dataset.sizeLabel) === keyOf(cell.dataset.eu)) || null;
+    const camel = (s) => s.replace(/-([a-z])/g, (_, ch) => ch.toUpperCase());
+    const pick = (cell) => {
+      current = cell;
+      cells.forEach((c) => c.setAttribute('aria-pressed', String(c === cell)));
+      $$('[data-conv]', sheet).forEach((d) => { d.textContent = (cell && cell.dataset[camel(d.dataset.conv)]) || '-'; });
+      const have = Boolean(cell) && cell.dataset.have === '1';
+      stateEl.classList.toggle('is-off', Boolean(cell) && !have);
+      stateEl.textContent = !cell ? '' : have ? 'Этот размер есть в наличии: нажмите «Готово», и он выберется в карточке.' : 'Этого размера сейчас нет в наличии.';
+      doneBtn.classList.toggle('is-muted', Boolean(cell) && !have);
+    };
+    const lock = (on) => document.body.classList.toggle('no-scroll', on);
+    const openSheet = () => {
+      // сначала размер, уже выбранный в карточке; иначе первый размер в наличии
+      const chosen = radios.find((r) => r.checked);
+      const key = chosen ? keyOf(chosen.dataset.sizeLabel) : NaN;
+      const start = cells.find((c) => keyOf(c.dataset.eu) === key) || cells.find((c) => c.dataset.have === '1') || null;
+      pick(start);
+      if (typeof sheet.showModal === 'function') { if (!sheet.open) sheet.showModal(); } else sheet.setAttribute('open', '');
+      lock(true);
+      if (start) start.scrollIntoView({ block: 'nearest' });
+    };
+    const closeSheet = () => { if (typeof sheet.close === 'function') sheet.close(); else sheet.removeAttribute('open'); lock(false); };
+    $$('[data-sizeguide-open]').forEach((b) => b.addEventListener('click', openSheet));
+    cells.forEach((c) => c.addEventListener('click', () => pick(c)));
+    $$('[data-sizesheet-close]', sheet).forEach((b) => b.addEventListener('click', closeSheet));
+    sheet.addEventListener('click', (e) => { if (e.target === sheet) closeSheet(); });   // клик по затемнённому фону
+    sheet.addEventListener('close', () => lock(false));
+    doneBtn.addEventListener('click', () => {
+      const r = current && current.dataset.have === '1' ? radioFor(current) : null;
+      if (r && !r.checked) { r.checked = true; r.dispatchEvent(new Event('change', { bubbles: true })); }
+      closeSheet();
+    });
+  }
+
   /* ---------- Галерея ---------- */
   const gallery = $('[data-gallery]');
   if (gallery) {

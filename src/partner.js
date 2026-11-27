@@ -384,7 +384,7 @@ function createPartner({ db, cfg, fetchImpl = fetch, sleep = sleepReal, log = co
 
   async function rows() {
     const r = await db.query(
-      `SELECT e.id, e.source, e.path, e.section, e.title, e.brand, e.price, e.old_price, e.in_stock, LEAST(jsonb_array_length(e.images), 8)::int AS image_count, e.created_at,
+      `SELECT e.id, e.source, e.path, e.section, e.title, e.brand, e.price, e.old_price, e.in_stock, LEAST(jsonb_array_length(e.images), 8)::int AS image_count, e.hidden_images, e.created_at,
               p.buy_price, p.markup_pct, p.manual_price
          FROM webshop.ext_products e LEFT JOIN webshop.ext_prices p ON p.ext_id = e.id
         WHERE e.source = $1 AND e.seen_at > NOW() - INTERVAL '3 days' AND (e.price > 0 OR p.manual_price > 0) ORDER BY e.id`, [source]);
@@ -395,12 +395,70 @@ function createPartner({ db, cfg, fetchImpl = fetch, sleep = sleepReal, log = co
     return r.rows[0] ? r.rows[0].description : '';
   }
 
+  // Проверка снимков на логотип чужого магазина (profile.scan: where - какие товары проверять, detect - детектор логотипа).
+  // Скачиваем снимки товара (только с сайта источника, с теми же паузами) и запоминаем, какие из них с логотипом: каталог их не показывает.
+  // Сменился список снимков (md5) - проверка повторяется сразу; не удалось скачать - images_scan_at = момент сбоя, повтор не раньше чем через 30 минут
+  // (после удачной проверки images_scan_at сбрасывается, чтобы новые снимки не ждали).
+  async function scanDownload(url) {
+    let u;
+    try { u = new URL(url); } catch { return { ok: true, buf: null }; }
+    if (u.origin !== new URL(base).origin) return { ok: true, buf: null };          // чужие адреса не качаем и не проверяем
+    await throttle();
+    try {
+      const res = await fetchImpl(u, { headers: { 'user-agent': ua, accept: 'image/*' }, redirect: 'follow', signal: AbortSignal.timeout(20_000) });
+      if (res.status >= 500 || res.status === 429) return { ok: false };
+      if (!res.ok || !/^image\//.test(res.headers.get('content-type') || '')) return { ok: true, buf: null };   // снимка нет: проверять нечего
+      const buf = Buffer.from(await res.arrayBuffer());
+      return { ok: true, buf: buf.length && buf.length < 12 * 1024 * 1024 ? buf : null };
+    } catch { return { ok: false }; }
+  }
+
+  async function syncImageScan({ limit = 1 } = {}) {
+    if (!profile.scan || state.running) return { skipped: true, scanned: 0, hidden: 0 };
+    state.running = 'images';
+    let scanned = 0;
+    let hidden = 0;
+    try {
+      const { rows } = await db.query(
+        `SELECT e.id, e.images FROM webshop.ext_products e
+          WHERE e.source = $1 AND e.seen_at > NOW() - INTERVAL '3 days' AND (${profile.scan.where})
+            AND e.images_scan <> md5(e.images::text) AND (e.images_scan_at IS NULL OR e.images_scan_at < NOW() - INTERVAL '30 minutes')
+          ORDER BY e.images_scan_at NULLS FIRST, e.id LIMIT $2`, [source, limit]);
+      for (const row of rows) {
+        const urls = (Array.isArray(row.images) ? row.images : []).slice(0, 8);
+        const bad = [];
+        let failed = false;
+        for (let i = 0; i < urls.length; i++) {
+          const r = await scanDownload(urls[i]);
+          if (!r.ok) { failed = true; break; }
+          if (r.buf && await profile.scan.detect(r.buf)) bad.push(i);
+        }
+        if (failed) await db.query('UPDATE webshop.ext_products SET images_scan_at = NOW() WHERE id = $1', [row.id]);
+        else {
+          // список снимков мог измениться, пока мы качали: тогда результат не записываем, проверка повторится
+          const r = await db.query(
+            `UPDATE webshop.ext_products SET hidden_images = $2::int[], images_scan = md5(images::text), images_scan_at = NULL
+              WHERE id = $1 AND images = $3::jsonb`, [row.id, bad, JSON.stringify(row.images)]);
+          if (r.rowCount) { scanned++; hidden += bad.length; }
+        }
+      }
+    } catch (e) {
+      log.warn(`${tag} проверка снимков: ${e.message}`);
+    } finally {
+      state.running = '';
+    }
+    return { scanned, hidden };
+  }
+
   async function status() {
     const [l, cnt] = await Promise.all([meta(profile.metaKey), db.query(
       `SELECT COUNT(*) FILTER (WHERE price > 0)::int AS total, COUNT(*) FILTER (WHERE in_stock AND price > 0)::int AS in_stock, COUNT(*) FILTER (WHERE detail_at IS NOT NULL AND price > 0)::int AS with_details,
-              COUNT(*)::int AS found
+              COUNT(*)::int AS found,
+              COALESCE(SUM(cardinality(hidden_images)), 0)::int AS photos_hidden,
+              COUNT(*) FILTER (WHERE cardinality(hidden_images) > 0)::int AS products_hidden,
+              COUNT(*) FILTER (WHERE price > 0 AND cardinality(hidden_images) > 0 AND cardinality(hidden_images) >= jsonb_array_length(images))::int AS no_photo
          FROM webshop.ext_products WHERE source = $1 AND seen_at > NOW() - INTERVAL '3 days'`, [source])]);
-    return { enabled: enabled(), running: state.running, listing: l, ...cnt.rows[0], baseUrl: base, source, name: profile.name, flag: profile.flag, bySitemap: Boolean(profile.discover) };
+    return { enabled: enabled(), running: state.running, listing: l, ...cnt.rows[0], baseUrl: base, source, name: profile.name, flag: profile.flag, bySitemap: Boolean(profile.discover), scans: profile.scan ? profile.scan.label : '' };
   }
 
   async function tick() {
@@ -408,12 +466,12 @@ function createPartner({ db, cfg, fetchImpl = fetch, sleep = sleepReal, log = co
     try {
       const l = await meta(profile.metaKey);
       const stale = !l || !l.finishedAt || Date.now() - new Date(l.finishedAt).getTime() > LISTING_EVERY_MS || (l.error && Date.now() - new Date(l.finishedAt).getTime() > 600_000);
-      if (stale) await syncListings(); else await syncDetails({ limit: 12 });
+      if (stale) await syncListings(); else { await syncDetails({ limit: 12 }); await syncImageScan({ limit: 1 }); }
     } catch (e) { log.warn(`${tag} ${e.message}`); }
   }
 
   return {
-    enabled, source, name: profile.name, rows, description, status, verify, fetchImage, imageUrl, refreshDetail, syncListings, syncDetails, tick, base,
+    enabled, source, name: profile.name, rows, description, status, verify, fetchImage, imageUrl, refreshDetail, syncListings, syncDetails, syncImageScan, tick, base,
     syncNow() { if (enabled() && !state.running) { syncListings(); return true; } return false; },
     start({ intervalMs = 60_000, firstMs = 20_000 } = {}) {
       if (!enabled() || c.autostart === false || state.timer) return;

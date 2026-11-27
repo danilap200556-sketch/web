@@ -4,6 +4,7 @@
 // Ходит и перепроверяет товары общий сервис из partner.js (вежливо: robots.txt, паузы, повторы); здесь только разбор страниц.
 const cheerio = require('cheerio');
 const { detectBrand } = require('./ext');
+const { hasBazaLogo } = require('./logoscan');
 
 const SITEMAP_SKIP = /files/i;          // sitemap-files.xml - это файлы для скачивания, не страницы
 const NOT_PRODUCT = new Set(['compare', 'uslugi']); // служебные разделы каталога и услуги (установка, перенос данных): это не товары
@@ -102,6 +103,9 @@ const DETAIL_EVERY_MS = 2 * 86400_000; // цены у магазина меня�
 const BAZA = {
   source: 'baza', name: 'BAZA (bazaplay.ru)', flag: 'BAZA_SYNC', defaultBase: 'https://bazaplay.ru',
   conf: (cfg) => cfg.baza, parseProduct: (html, base) => parseProduct(html, base), discover: discoverProducts, detailEveryMs: DETAIL_EVERY_MS, metaKey: 'ext_listing_baza',
+  // Собственные компьютеры BAZA сняты с их вывеской на корпусе: такие снимки на нашем сайте не нужны. Проверяются только товары
+  // раздела «Компьютеры» (там бывают их сборки) и всё, что названо BAZA: остальные разделы чистые (проверено на выборке по всему каталогу).
+  scan: { where: "(e.section LIKE '%омпьютер%' OR e.title ILIKE '%baza%')", detect: hasBazaLogo, label: 'логотип BAZA' },
 };
 
 module.exports = { parseProduct, parseSitemap, productPaths, discoverProducts, BAZA };

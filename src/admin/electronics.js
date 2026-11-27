@@ -215,12 +215,13 @@ module.exports = function mount({ db, auth, render, fmt, router, settings, partn
         <header class="card__h"><div><h2>Каталог: ${st.name}</h2>
           <p class="muted">Ассортимент, цены, наличие и фото электроники подтягиваются с сайта поставщика и показываются в разделе «Электроника». Заказы на такие товары приходят вам обычным порядком, а передать их поставщику нужно самим: в заказе они помечены.</p></div></header>
         <p>${st.enabled ? chip('chip--green', 'синхронизация включена') : chip('chip--gray', 'синхронизация выключена')}
-          ${st.running === 'listing' ? chip('chip--blue', 'идёт обход каталога') : st.running === 'details' ? chip('chip--blue', 'идёт загрузка карточек') : ''}</p>
+          ${st.running === 'listing' ? chip('chip--blue', 'идёт обход каталога') : st.running === 'details' ? chip('chip--blue', 'идёт загрузка карточек') : st.running === 'images' ? chip('chip--blue', 'идёт проверка снимков') : ''}</p>
         <dl class="facts">
           <dt>Товаров в каталоге</dt><dd>${num(st.total)}, в наличии ${num(st.in_stock)}</dd>
           ${st.bySitemap && st.found > st.total ? html`<dt>Найдено адресов на сайте</dt><dd>${num(st.found)} (цены и фото загружаются из карточек порциями: за минуту примерно 12 товаров; часть адресов - разделы и снятые с продажи товары, их на сайте не будет)</dd>` : ''}
           <dt>С описанием и крупными фото</dt><dd>${num(st.with_details)} из ${num(st.total)} (остальные догружаются в фоне)</dd>
           <dt>Последний обход каталога</dt><dd>${l && l.finishedAt ? html`${fmt.dateTime(l.finishedAt)}: ${st.bySitemap ? `адресов ${num(l.items)}` : `страниц ${num(l.pages)}, товаров ${num(l.items)}`}` : 'ещё не было'}</dd>
+          ${st.scans ? html`<dt>Снимки с логотипом</dt><dd>${st.photos_hidden ? html`скрыто ${num(st.photos_hidden)} (товаров ${num(st.products_hidden)}); ищется ${st.scans}, проверка идёт в фоне по одному товару в минуту.${st.no_photo ? html` Без единого чистого снимка осталось ${num(st.no_photo)}: на сайте такие товары не показываются.` : ''}` : html`ищется ${st.scans}; проверка идёт в фоне по одному товару в минуту, пока ничего не найдено.`}</dd>` : ''}
           ${l && l.error ? html`<dt>Ошибка обхода</dt><dd class="warn">${l.error}</dd>` : ''}
           <dt>Источник</dt><dd><a href="${st.baseUrl}" target="_blank" rel="noopener">${st.baseUrl}</a></dd>
         </dl>

@@ -289,6 +289,11 @@ const SCHEMA = [
    )`,
   // Своё описание модели из админки («Витрина и каталог»): пусто - описание из склада
   `ALTER TABLE webshop.model_flags ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''`,
+  // Снимки товаров партнёров с логотипом чужого магазина не показываются: номера скрытых снимков (по порядку в images), проверенный набор
+  // снимков (md5 списка: сменился список - проверка повторяется) и время последней попытки проверки
+  `ALTER TABLE webshop.ext_products ADD COLUMN IF NOT EXISTS hidden_images INTEGER[] NOT NULL DEFAULT '{}'`,
+  `ALTER TABLE webshop.ext_products ADD COLUMN IF NOT EXISTS images_scan TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE webshop.ext_products ADD COLUMN IF NOT EXISTS images_scan_at TIMESTAMPTZ`,
   // Свои товары: добавляются вручную в админке («Свои товары»). Остаток размера = поступило (received) минус проданное в заказах,
   // которые не отменены и не возвращены: так отмена и возврат сами возвращают остаток, а склад приложения «Склад» не задействован.
   `CREATE TABLE IF NOT EXISTS webshop.own_products (

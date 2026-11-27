@@ -89,7 +89,9 @@ function buildExtModels(rows, { markupPct = 0, baseUrl = '', showOldPrice = fals
     const discount = oldPrice ? Math.max(1, Math.min(99, Math.round((1 - price / oldPrice) * 100))) : 0;
     // Каталогу нужно только число фото (сами адреса не нужны): из базы приходит image_count, а целый список images - необязательно
     const count = Number.isInteger(r.image_count) ? r.image_count : (Array.isArray(r.images) ? Math.min(r.images.length, 8) : 0);
-    const photos = Array.from({ length: count }, (_, i) => extPhoto(r.id, i));
+    // Снимки, на которых нашли логотип чужого магазина (hidden_images), не показываем; номер снимка в адресе остаётся прежним
+    const hiddenIdx = new Set(Array.isArray(r.hidden_images) ? r.hidden_images : []);
+    const photos = Array.from({ length: count }, (_, i) => i).filter((i) => !hiddenIdx.has(i)).map((i) => extPhoto(r.id, i));
     const brand = r.brand || detectBrand(r.title, r.section) || detectBrand(r.section);
     const model = brand && String(r.title).toLowerCase().includes(brand.toLowerCase()) ? String(r.title).replace(new RegExp(brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), '').replace(/\s+/g, ' ').trim() : String(r.title);
     const inStock = Boolean(r.in_stock);
